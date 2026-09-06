@@ -1,46 +1,197 @@
-# modelos/
+# Sistema de tracking de pelota — indice de comandos
 
-Los `.pt` **si** se versionan en git: son la unica forma de reproducir un
-resultado de la tesis meses despues. Los `.hef` no, porque se compilan a
-partir del `.pt` y solo sirven en la Pi.
+Todo lo que se puede correr, en un solo lugar. El detalle de cada modulo esta
+en su docstring; el estado del proyecto y los numeros medidos, en `ESTADO.md`.
 
-## Reglas
+Cada archivo acepta `--help`.
 
-1. **Nombre versionado, nunca sobrescribir.** `..._300ep.pt`, no `modelo.pt`.
-   En git el costo de espacio es el mismo (cada version queda en el historial
-   igual), pero asi podes volver a una anterior por nombre.
-2. **Borra los experimentos fallidos ANTES del primer commit.** Una vez
-   commiteado, un `.pt` queda en el historial para siempre aunque lo borres
-   despues, y el `git clone` se lo sigue bajando.
-3. **Anota aca cada modelo nuevo**, con que se entreno y que dio. Sin esto, en
-   dos meses hay cuatro `.pt` y ninguna forma de saber cual es cual.
+---
 
-## Cual esta en uso
+## Antes que nada
 
-Lo define `config.MODELO_PT`. El codigo no busca en esta carpeta por su
-cuenta: o pones la ruta completa en `config.py`, o la pasas por entorno:
+```
+python inferencia.py            # que backend eligio y como es el modelo
+python fuente.py --carpeta imagenes/Soleado --n 5
+```
 
-    MODELO_PT=modelos/run_yolo26n_..._300ep.pt python3 replay.py --carpeta ...
+Si `inferencia.py` describe el modelo con `IN (640, 1152, 3)` y
+`CLASES 1 -> 0:ball`, el entorno esta bien.
 
-## Inventario
+`FileNotFoundError` = la ruta del `.pt`. Esta en `config.MODELO_PT`, y se
+puede pisar sin editar nada: `MODELO_PT=modelos/otro.pt python replay.py ...`
 
-| archivo | entrada | clases | epocas | notas |
-|---|---|---|---|---|
-| `run_yolo26n_sesiones_1152x640px_300ep.pt` | 1152x640 | 1 (`ball`) | 300 | **EN USO.** Ver medicion abajo |
+---
 
-### run_yolo26n_sesiones_1152x640px_300ep.pt
+## replay.py — el banco de pruebas
 
-Medido con `replay.py` el 2026-09-06 (detalle completo en `ESTADO.md`):
+La herramienta principal. Corre el pipeline sobre material grabado, sin motor,
+sin encoder y sin GoPro. Escribe CSV + mp4 anotado + resumen.
 
-- recall con `--solo-search`: 85.1% sobre 315 imagenes de `Soleado`,
-  confianza p50 0.797
-- tracking sin Kalman: 84.8% de tiempo en TRACK, 79.7% de detecciones
-  aceptadas
+```
+python replay.py --carpeta imagenes/Soleado
+python replay.py --video grabacion.mkv --salida-csv salidas/r.csv --salida-mp4 salidas/r.mp4
+python replay.py --carpeta imagenes --limite 300 --sin-mp4
+```
 
-Pendiente: no se separaron falsos positivos. La confianza minima aceptada es
-0.107, apenas por encima de `CONF_MIN_DETECTION = 0.1`, asi que ese 85.1% es
-un techo y no el recall real.
+### Los dos modos, y cual usar
 
-> Nota: el nombre no coincide con los dos `.pt` que figuran en el briefing
-> (`..._CROP_...200ep` y `..._DOWNSCALE_...200ep`). El de DOWNSCALE se
-> descarto junto con `SEARCH_FULL`. Confirmar si este es el sucesor del CROP.
+| | cuando | que mide |
+|---|---|---|
+| normal | **secuencia continua** (video o rafaga) | tracking: % en TRACK, caidas |
+| `--solo-search` | **imagenes sueltas** | recall puro, comparable entre carpetas |
+
+Con imagenes sueltas el modo normal MIENTE: despues de la primera deteccion
+buena entra a TRACK y recorta 1152x640 alrededor de donde estaba la pelota en
+OTRA foto, asi que pierde detecciones por un motivo que no tiene nada que ver
+con el modelo. Y el efecto depende del orden de los archivos, o sea que
+contamina la comparacion entre carpetas.
+
+```
+python replay.py --carpeta imagenes/Soleado --solo-search
+```
+
+### Comparar A/B: cuanto aporta cada mecanismo
+
+El tracker agrega DOS cosas sobre la maquina de estados vieja. Los
+interruptores estan separados a proposito: con uno solo no se sabe a cual
+atribuir la diferencia.
+
+```
+python replay.py --video v.mp4 --sin-csv --sin-mp4                          # completo
+python replay.py --video v.mp4 --sin-csv --sin-mp4 --sin-kalman             # sin prediccion
+python replay.py --video v.mp4 --sin-csv --sin-mp4 --sin-kalman --sin-gate  # = state_machine.py
+```
+
+- `--sin-kalman`: la prediccion deja de usarse para elegir; se toma el
+  candidato mas confiado. El filtro igual corre y `err_pred` se sigue
+  reportando, asi que las corridas son comparables.
+- `--sin-gate`: no se rechaza ningun salto por implausible.
+
+El titulo del resumen dice la variante (`[completo]`, `[sin kalman]`...) para
+no mezclar corridas.
+
+**Mira el reparto de motivos, no solo los porcentajes.** Ahi se ve directo
+cuantos frames rescato el Kalman (`kalman`) y cuantos falsos positivos freno
+el gate (`delta imposible`). Esos dos numeros son el aporte real de cada
+mecanismo y son mejor evidencia para la tesis que la diferencia agregada.
+
+### OJO con `--fps` si el material no es de 40 fps
+
+El reloj sintetico avanza 1/fps por imagen, y el gate de plausibilidad escala
+con ese tiempo. Con la tasa mal, el gate rechaza detecciones buenas en masa:
+sobre `imagenes/test_kalman` (capturada mas espaciada) el default de 40 fps
+tiraba el 38% de los frames y la deteccion aceptada caia de 88% a 42%. Con
+`--fps 4` volvio a 87.5% y los rechazos a cero.
+
+```
+python replay.py --carpeta imagenes/test_kalman --fps 4
+```
+
+Si no sabes la tasa, mirala en el resumen: `desplazamiento entre frames`. Con
+cajas de ~20 px, un p50 de ~13 px es material continuo a 40 fps; 143 px es
+diez veces mas espaciado.
+
+### Otras opciones
+
+`--camara 0|1` (para `pixel_a_angulo`), `--fps` (pisa el reloj sintetico),
+`--limite N`, `--modelo ruta.pt`, `--escala`, `--sin-csv`, `--sin-mp4`.
+
+### Columnas del CSV
+
+```
+n, ts, modo, camara, tile, conf, x, y, w, h, angulo, sector, flost,
+aceptado_por, pred_x, pred_y, err_pred, vx, vy, motivo, dist_ult
+```
+
+Las mismas que va a escribir `main_final.py`: el analisis de la tesis es un
+solo script para los dos.
+
+- `err_pred` — residuo del Kalman, para tunear `KALMAN_SIGMA_*` (ver
+  `config.py`)
+- `motivo` — se llena SIEMPRE, tambien al rechazar. Sin esto no se distingue
+  "el modelo no vio nada" de "el gate lo rechazo"
+- `dist_ult` — desplazamiento contra la ultima aceptada; comparalo con el gate
+- `sector` — vacia hasta P4
+
+---
+
+## Tests
+
+```
+python test_preproceso.py               # 10, grilla y remapeo de coordenadas
+python test_tracker.py                  # 23, Kalman, gate y patron de SEARCH
+python test_inferencia_ultralytics.py   # contrato del backend, sin .pt real
+```
+
+Ninguno necesita modelo, camara ni NPU.
+
+---
+
+## Modulos sueltos
+
+```
+python preproceso.py                    # describe la grilla de SEARCH
+python preproceso.py --ancho 2304 --alto 1296 --modelo 1152x640
+```
+
+Deteccion sobre UNA imagen, con la caja dibujada y sin maquina de estados:
+
+```
+python inferencia_ultralytics.py --imagen foto.jpg --tiles --salida det.jpg
+python inferencia_ultralytics.py --info
+```
+
+---
+
+## Hardware (solo en la Raspberry Pi)
+
+```
+python motor_lib.py --test              # ida y vuelta de 90 grados
+python motor_lib.py                     # terminal interactiva
+python encoder_lib.py                   # config y monitor del encoder
+python gopro_lib.py --estado
+python camera_source.py --n 300 --modos # banco de captura
+```
+
+**`encoder_lib.py` interactivo expone `poner_cero_aca()`, que reescribe el
+registro ZPOS del chip y invalida `ENCODER_GRADOS_EN_MOTOR_CERO = 79.0`.** Con
+eso mal, el homing queda corrido en todos los arranques siguientes. No usarla.
+
+---
+
+## Que corre donde
+
+| | PC | Raspberry Pi |
+|---|---|---|
+| backend | Ultralytics (`.pt`) | Hailo-8 (`.hef`) |
+| entrada | carpeta de imagenes / video | Picamera2 |
+
+Los dos se eligen solos (`inferencia.py`, `fuente.py`) y se pueden forzar:
+
+```
+BACKEND=ultralytics FUENTE=carpeta python replay.py --carpeta imagenes/Soleado
+```
+
+**Las latencias medidas en la PC no significan nada** para el presupuesto de
+25 ms de P0: Ultralytics en CPU esta uno o dos ordenes de magnitud por encima
+de la Hailo. Ese numero se mide en la Pi con el `.hef`.
+
+---
+
+## Archivos que se van a reemplazar
+
+`main.py` (loop viejo sobre video, lo reemplaza `replay.py`),
+`state_machine.py` (lo reemplaza `tracker.py`) y `main_partido.py` (queda como
+debug manual). Siguen ahi porque `main_partido.py` importa `main`, y
+`gpio_timer.py` importa `Mode` de `state_machine`. No los borres todavia.
+
+---
+
+## Carpetas
+
+```
+modelos/    los .pt, versionados. Ver modelos/README.md
+imagenes/   ignorada por git
+videos/     ignorada por git
+salidas/    ignorada por git; aca escribe replay.py por defecto
+```

@@ -62,7 +62,7 @@ NATIVE_FPS = 60
 # =============================================================================
 
 HEF_PATH = "yolov26n_coco.hef"      # lo usa el backend Hailo, en la Pi
-MODELO_PT = "run_yolo26n_sesiones_1152x640px_300ep.pt"     # lo usa el backend Ultralytics, en la PC
+MODELO_PT = "modelos/run_yolo26n_sesiones_1152x640px_300ep.pt"
 
 # CORREGIDO. Antes decía 1152 (escalar, cuadrado). El modelo NO es
 # cuadrado: `hailortcli parse-hef` reporta NHWC(640x1152x3), o sea
@@ -131,6 +131,75 @@ MS_PERDIDA_TRACK = 300.0
 
 
 # =============================================================================
+# TRACKER (P3)
+# =============================================================================
+# Umbrales de aceptacion de un candidato. Los dos son del briefing.
+#
+# Medicion real sobre imagenes/Soleado con el .pt propio: confianza p50 0.810,
+# p95 0.929, minima aceptada 0.107. O sea que una deteccion buena queda MUY
+# por encima de CONF_ALTA y se acepta sola.
+#
+# CONF_BAJA no es "que se acepta": es "que vale la pena mirar". Un candidato
+# entre CONF_BAJA y CONF_ALTA se acepta SOLO si cae cerca de donde el Kalman
+# predijo. Bajarlo ofrece mas candidatos al filtro; subirlo lo deja ciego
+# cuando la pelota se ve mal (borrosa, tapada, contra el sol).
+CONF_ALTA = 0.50
+CONF_BAJA = 0.10
+
+# Cuantos frames seguidos sin aceptar nada antes de volver a SEARCH.
+# A 40 fps, 10 frames son 250 ms.
+FLOST_A_SEARCH = 10
+
+# --- Gate de plausibilidad ---------------------------------------------------
+# radio_gate_px = max(GATE_PX_MIN, GATE_DIAMETROS * max(w, h))
+#
+# De donde sale el 6: a 50 m/s (el techo fisico de un pelotazo) y 40 fps, la
+# pelota se desplaza 1.25 m por frame. Una pelota nro 4 mide 0.21 m. El
+# cociente es 5.95 y es INDEPENDIENTE DE LA DISTANCIA, porque el
+# desplazamiento aparente y el diametro aparente se escalan los dos con 1/d.
+# No hay que calibrar nada: ni FOV, ni distancia, ni altura.
+#
+# El piso de 60 px cubre la pelota muy lejos, donde la caja mide 8 px y 6
+# diametros serian 48 px, menos que el ruido de la propia deteccion.
+GATE_DIAMETROS = 6.0
+GATE_PX_MIN = 60.0
+
+# --- Kalman ------------------------------------------------------------------
+# Velocidad constante en (x, y, vx, vy), en pixeles del frame NATIVO.
+#
+# ESTOS DOS NUMEROS SON TENTATIVOS y son el ajuste fino del filtro. Se tunean
+# mirando la columna err_pred del CSV de replay.py, que es el residuo
+# (distancia entre lo que el filtro predijo y donde aparecio la deteccion):
+#
+#   err_pred grande y sistematico  -> el modelo de movimiento no alcanza, o
+#       KALMAN_SIGMA_MEDICION esta muy chico (el filtro le cree de mas a su
+#       propia prediccion y reacciona tarde a los cambios de direccion)
+#   err_pred chico pero la trayectoria tiembla -> KALMAN_SIGMA_MEDICION muy
+#       grande: el filtro esta copiando el ruido de la deteccion
+#
+# Ruido de proceso: cuanta aceleracion NO modelada se admite, en px/s^2. Una
+# pelota que rebota o la patean cambia de velocidad de golpe, y eso el modelo
+# de velocidad constante no lo ve venir. Arranque: 2000 px/s^2.
+KALMAN_SIGMA_ACEL = 2000.0
+
+# Ruido de medicion: cuanto se desvia el centro que reporta el modelo respecto
+# del centro real, en px. Arranque: 8 px, del orden de medio diametro de la
+# pelota a distancia media.
+KALMAN_SIGMA_MEDICION = 8.0
+
+# --- Patron de SEARCH --------------------------------------------------------
+# Barridos COMPLETOS (los 4 cuadrantes) en la camara donde se vio la pelota
+# por ultima vez, antes de probar con la otra. La asimetria es a proposito: lo
+# mas probable es que siga donde estaba.
+#
+# Medicion de la linea de base (un cuadrante por frame, sin este patron):
+# recuperarse de una perdida costaba ~16 frames y la deteccion en SEARCH era
+# 16.7%, o sea aproximadamente 1 de cada 4.
+SEARCH_BARRIDOS_ACTIVA = 3
+SEARCH_BARRIDOS_OTRA = 1
+
+
+# =============================================================================
 # GPIO
 # =============================================================================
 
@@ -185,6 +254,4 @@ MS_PERMANENCIA = 1500.0
 OMEGA_RAPIDA = 28.0
 OMEGA_LENTA = 13.0
 
-CONF_ALTA = 0.60
-CONF_BAJA = 0.25
 FILTRO_ALFA = 0.4

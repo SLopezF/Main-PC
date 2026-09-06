@@ -64,16 +64,32 @@ import geometria
 import postprocess
 import preproceso
 from inferencia import abrir as abrir_inferencia
-from state_machine import Mode, TrackerState
-import state_machine
+from tracker import Mode, Tracker
 
 # Todas las salidas van a una sola carpeta, que .gitignore ignora entera. Sin
 # esto los csv y los mp4 se desparraman por la raiz del repo y terminan
 # commiteados por accidente.
 DIR_SALIDAS = "salidas"
 
+# pred_x / pred_y / err_pred son el residuo del Kalman: la distancia entre lo
+# que el filtro predijo ANTES de ver el frame y donde aparecio la deteccion.
+# Es la señal con la que se tunean KALMAN_SIGMA_ACEL y KALMAN_SIGMA_MEDICION.
+class _Cand:
+    """
+    Candidato en pixeles del frame NATIVO. El tracker solo pide .x .y .w .h y
+    .confidence; se guarda .original para poder dibujar la caja despues, que
+    sigue en coordenadas del tensor.
+    """
+    __slots__ = ("x", "y", "w", "h", "confidence", "original")
+
+    def __init__(self, x, y, w, h, confidence, original):
+        self.x, self.y, self.w, self.h = x, y, w, h
+        self.confidence, self.original = confidence, original
+
+
 COLUMNAS = ["n", "ts", "modo", "camara", "tile", "conf", "x", "y", "w", "h",
-            "angulo", "sector", "flost", "aceptado_por"]
+            "angulo", "sector", "flost", "aceptado_por",
+            "pred_x", "pred_y", "err_pred", "vx", "vy", "motivo", "dist_ult"]
 
 
 # =============================================================================
@@ -166,66 +182,79 @@ def abrir_fuente_replay(video: str | None, carpeta: str | None,
 # Procesamiento de un frame
 # =============================================================================
 
-def procesar_frame(frame, info, hailo, model_hw, state, tile_idx):
+def procesar_frame(frame, info, hailo, model_hw, tr):
     """
-    Un frame de punta a punta: arma el tensor segun el modo, infiere,
-    decodifica y actualiza la maquina de estados.
+    Un frame de punta a punta: arma el tensor segun el modo que pide el
+    tracker, infiere, decodifica los candidatos y deja que el tracker decida.
 
-    Esta funcion es la que despues comparte main_final.py. Por eso recibe el
-    `info` de la fuente entero (aunque en P2 solo use ts_ns): cuando entre el
-    Kalman va a necesitar el dt real, y la firma no tiene que cambiar.
+    Esta funcion es la que despues comparte main_final.py.
 
-    Devuelve (fila_csv, deteccion, to_global, modo_previo, ms).
-
-    NO se usa gpio_timer aca: el pin solo tiene sentido midiendo en la Pi con
-    osciloscopio, y en la PC ensuciaria la salida con prints por frame.
+    Se llama process_candidates() y no process(): el tracker necesita VARIOS
+    candidatos para poder elegir el mas cercano a la prediccion cuando la
+    confianza es baja. Con uno solo, esa mitad del algoritmo no existe.
     """
     t0 = time.perf_counter()
 
-    modo_previo = state.mode
-    if modo_previo == Mode.SEARCH:
+    _, tile = tr.siguiente_entrada()
+
+    if tr.modo == Mode.SEARCH:
         tensor, to_global = preproceso.build_search_input(
-            frame, model_hw, tile_idx)
-        tile_usado = tile_idx % len(
-            preproceso.search_tiles(frame.shape[:2], model_hw))
+            frame, model_hw, tile)
     else:
         tensor, to_global = preproceso.build_track_input(
-            frame, state.crop_center(), model_hw)
-        tile_usado = -1
+            frame, tr.crop_center(), model_hw)
 
-    deteccion = postprocess.process(hailo.infer(tensor), model_hw)
+    crudos = postprocess.process_candidates(
+        hailo.infer(tensor), model_hw,
+        umbral=getattr(config, "CONF_CANDIDATO", 0.05), topk=8)
 
-    if deteccion is not None:
-        gx, gy = to_global(deteccion.x, deteccion.y)
-    else:
-        gx, gy = None, None
+    # Los candidatos llegan en coordenadas del TENSOR; el tracker trabaja en
+    # pixeles del frame nativo. Se remapean antes de entregarlos.
+    candidatos = []
+    for d in crudos:
+        gx, gy = to_global(d.x, d.y)
+        candidatos.append(_Cand(gx, gy, d.w, d.h, d.confidence, d))
 
-    conf = deteccion.confidence if deteccion is not None else None
-    state_machine.update(state, conf, gx, gy)
-
+    r = tr.actualizar(candidatos, info["ts_ns"], info.get("camara", 0))
     ms = (time.perf_counter() - t0) * 1000.0
 
     ancho = frame.shape[1]
-    angulo = (geometria.pixel_a_angulo(gx, ancho, info.get("camara", 0))
-              if gx is not None else None)
+    angulo = (geometria.pixel_a_angulo(r.x, ancho, r.camara)
+              if r.x is not None else None)
+
+    det_dibujo = None
+    if r.aceptado:
+        for c in candidatos:
+            if c.x == r.x and c.y == r.y:
+                det_dibujo = c.original
+                break
 
     fila = {
         "n": info["seq"] - 1,
         "ts": info["ts_ns"] / 1e9,
-        "modo": modo_previo.name,
-        "camara": info.get("camara", 0),
-        "tile": tile_usado,
-        "conf": f"{conf:.4f}" if conf is not None else "",
-        "x": f"{gx:.1f}" if gx is not None else "",
-        "y": f"{gy:.1f}" if gy is not None else "",
-        "w": f"{deteccion.w:.1f}" if deteccion is not None else "",
-        "h": f"{deteccion.h:.1f}" if deteccion is not None else "",
+        "modo": r.modo.name,
+        "camara": r.camara,
+        "tile": r.tile,
+        "conf": f"{r.conf:.4f}" if r.conf is not None else "",
+        "x": f"{r.x:.1f}" if r.x is not None else "",
+        "y": f"{r.y:.1f}" if r.y is not None else "",
+        "w": f"{r.w:.1f}" if r.w is not None else "",
+        "h": f"{r.h:.1f}" if r.h is not None else "",
         "angulo": f"{angulo:.2f}" if angulo is not None else "",
-        "sector": "",          # P4
-        "flost": state.frames_lost,
-        "aceptado_por": "confianza" if deteccion is not None else "",
+        "sector": "",
+        "flost": r.flost,
+        "aceptado_por": r.motivo if r.aceptado else "",
+        "pred_x": f"{r.pred_x:.1f}" if r.pred_x is not None else "",
+        "pred_y": f"{r.pred_y:.1f}" if r.pred_y is not None else "",
+        "err_pred": f"{r.err_pred:.1f}" if r.err_pred is not None else "",
+        "vx": f"{r.vx:.0f}" if r.vx is not None else "",
+        "vy": f"{r.vy:.0f}" if r.vy is not None else "",
+        # motivo se llena SIEMPRE, tambien cuando se rechaza: sin esto no se
+        # puede distinguir "el modelo no vio nada" de "el gate lo rechazo".
+        "motivo": r.motivo,
+        "dist_ult": f"{r.dist_ult:.1f}" if r.dist_ult is not None else "",
     }
-    return fila, deteccion, to_global, modo_previo, ms
+    return fila, det_dibujo, to_global, r.modo, ms
 
 
 def procesar_frame_solo_search(frame, info, hailo, model_hw):
@@ -284,6 +313,9 @@ def procesar_frame_solo_search(frame, info, hailo, model_hw):
         "sector": "",
         "flost": 0,
         "aceptado_por": "confianza" if deteccion is not None else "",
+        "pred_x": "", "pred_y": "", "err_pred": "", "vx": "", "vy": "",
+        "motivo": "confianza" if deteccion is not None else "sin candidato",
+        "dist_ult": "",
     }
     return fila, deteccion, to_global, Mode.SEARCH, ms
 
@@ -341,7 +373,7 @@ def _percentil(valores, p):
 
 
 def resumir(filas, latencias, transiciones, t_corrida, solo_search=False,
-            etiqueta=None):
+            etiqueta=None, variante=None):
     n = len(filas)
     con_det = sum(1 for f in filas if f["aceptado_por"])
     en_track = sum(1 for f in filas if f["modo"] == "TRACK")
@@ -358,7 +390,8 @@ def resumir(filas, latencias, transiciones, t_corrida, solo_search=False,
     L = [
         "",
         "=" * 66,
-        "RESUMEN" + (f"  --  {etiqueta}" if etiqueta else ""),
+        "RESUMEN" + (f"  --  {etiqueta}" if etiqueta else "")
+        + (f"  [{variante}]" if variante else ""),
         "=" * 66,
         f"{'imagenes procesadas' if solo_search else 'frames procesados':28s} {n}",
         f"con deteccion aceptada       {con_det}  ({_pct(con_det, n):.1f}%)",
@@ -402,6 +435,38 @@ def resumir(filas, latencias, transiciones, t_corrida, solo_search=False,
     if angulos:
         L.append(f"angulo     min {min(angulos):.1f}   max {max(angulos):.1f}")
 
+    # Residuo del Kalman: la señal para tunear el filtro. Ver config.py.
+    errs = [float(f["err_pred"]) for f in filas if f.get("err_pred")]
+    if errs:
+        L += [
+            "",
+            f"residuo Kalman (px)          p50 {_percentil(errs, 50):.1f}"
+            f"   p95 {_percentil(errs, 95):.1f}   max {max(errs):.1f}",
+            "  grande y sistematico -> subir KALMAN_SIGMA_MEDICION o el modelo",
+            "  no alcanza; chico pero la trayectoria tiembla -> bajarlo.",
+        ]
+
+    por_motivo = {}
+    for f in filas:
+        m = f.get("motivo") or ("confianza" if f["aceptado_por"] else "?")
+        por_motivo[m] = por_motivo.get(m, 0) + 1
+    if por_motivo:
+        L += ["", "motivo por frame:"]
+        for k, v in sorted(por_motivo.items(), key=lambda kv: -kv[1]):
+            L.append(f"  {k:20s} {v:5d}  ({_pct(v, n):.1f}%)")
+
+    # Cuanto se movio la pelota entre frames aceptados, contra el gate. Si el
+    # p95 se acerca al gate tipico, el material no es continuo a la tasa que
+    # dice el reloj y el gate esta rechazando detecciones legitimas.
+    dist = [float(f["dist_ult"]) for f in filas if f.get("dist_ult")]
+    if dist:
+        L += [
+            "",
+            f"desplazamiento entre frames  p50 {_percentil(dist, 50):.0f} px"
+            f"   p95 {_percentil(dist, 95):.0f} px"
+            f"   max {max(dist):.0f} px",
+        ]
+
     L += [
         "",
         f"latencia por frame           p50 {_percentil(latencias, 50):.1f} ms"
@@ -424,7 +489,8 @@ def resumir(filas, latencias, transiciones, t_corrida, solo_search=False,
 def correr(video=None, carpeta=None, camara=0, fps=None, limite=None,
            salida_csv=DIR_SALIDAS + "/replay.csv",
            salida_mp4=DIR_SALIDAS + "/replay.mp4",
-           escala=None, modelo=None, solo_search=False):
+           escala=None, modelo=None, solo_search=False,
+           sin_kalman=False, sin_gate=False):
     escala = escala if escala is not None else getattr(
         config, "DEBUG_VIDEO_SCALE", 0.5)
 
@@ -439,8 +505,7 @@ def correr(video=None, carpeta=None, camara=0, fps=None, limite=None,
 
     model_hw = preproceso.get_model_hw(hailo)
 
-    state = TrackerState()
-    tile_idx = 0
+    tr = None            # se crea con el primer frame, que da el tamano
     filas, latencias = [], []
     transiciones = {"a_track": 0, "a_search": 0}
     escritor_mp4 = None
@@ -468,30 +533,41 @@ def correr(video=None, carpeta=None, camara=0, fps=None, limite=None,
                 tiles = preproceso.search_tiles((h, w), model_hw)
                 print(f"[init] frame {w}x{h}  ->  modelo "
                       f"{model_hw[1]}x{model_hw[0]}")
+                apagados = [n for n, off in
+                            (("kalman", sin_kalman), ("gate", sin_gate)) if off]
+                if apagados:
+                    print(f"[init] APAGADO: {', '.join(apagados)}  "
+                          f"(corrida de comparacion)")
                 print(f"[init] SEARCH: {len(tiles)} tiles de "
                       f"{tiles[0][2]}x{tiles[0][3]}, escala "
                       f"{model_hw[1] / tiles[0][2]:.4f}")
+                tr = Tracker(
+                    n_tiles=len(tiles),
+                    camara_inicial=camara,
+                    usar_kalman=not sin_kalman,
+                    usar_gate=not sin_gate,
+                    fn_tile=lambda x, y: preproceso.tile_para_punto(
+                        (h, w), model_hw, x, y),
+                )
                 primero = False
 
-            modo_previo = state.mode
             if solo_search:
+                modo_previo = Mode.SEARCH
                 fila, det, to_global, _, ms = procesar_frame_solo_search(
                     frame, info, hailo, model_hw)
             else:
+                modo_previo = tr.modo
                 fila, det, to_global, _, ms = procesar_frame(
-                    frame, info, hailo, model_hw, state, tile_idx)
+                    frame, info, hailo, model_hw, tr)
 
             # El tile rota solo si ESTE frame fue de SEARCH. En P2 se barre un
             # cuadrante por frame, igual que hacia main.py: es la linea de
             # base honesta. P3 cambia esto a los 4 cuadrantes por barrido.
-            if not solo_search and modo_previo == Mode.SEARCH:
-                tile_idx += 1
-
             if solo_search:
                 pass
-            elif modo_previo == Mode.SEARCH and state.mode == Mode.TRACK:
+            elif modo_previo == Mode.SEARCH and tr.modo == Mode.TRACK:
                 transiciones["a_track"] += 1
-            elif modo_previo == Mode.TRACK and state.mode == Mode.SEARCH:
+            elif modo_previo == Mode.TRACK and tr.modo == Mode.SEARCH:
                 transiciones["a_search"] += 1
 
             filas.append(fila)
@@ -532,8 +608,11 @@ def correr(video=None, carpeta=None, camara=0, fps=None, limite=None,
         except Exception:
             pass
 
+    variante = "sin " + " y sin ".join(
+        n for n, off in (("kalman", sin_kalman), ("gate", sin_gate)) if off
+    ) if (sin_kalman or sin_gate) else "completo"
     print(resumir(filas, latencias, transiciones, t_corrida, solo_search,
-                  etiqueta=carpeta or video))
+                  etiqueta=carpeta or video, variante=variante))
     if salida_csv:
         print(f"csv -> {os.path.abspath(salida_csv)}")
     if salida_mp4:
@@ -561,6 +640,13 @@ def main() -> int:
     ap.add_argument("--sin-mp4", action="store_true")
     ap.add_argument("--sin-csv", action="store_true")
     ap.add_argument("--escala", type=float, default=None)
+    ap.add_argument("--sin-kalman", action="store_true",
+                    help="no usar la prediccion para elegir candidatos; se "
+                         "toma el mas confiado. Para comparar A/B.")
+    ap.add_argument("--sin-gate", action="store_true",
+                    help="no aplicar el gate de plausibilidad. Para comparar "
+                         "A/B. Con --sin-kalman y --sin-gate juntos, el "
+                         "tracker equivale a state_machine.py.")
     ap.add_argument("--solo-search", action="store_true",
                     help="barre los 4 cuadrantes de cada imagen y no entra "
                          "nunca a TRACK. Para imagenes SUELTAS: mide recall "
@@ -578,6 +664,8 @@ def main() -> int:
         escala=args.escala,
         modelo=args.modelo,
         solo_search=args.solo_search,
+        sin_kalman=args.sin_kalman,
+        sin_gate=args.sin_gate,
     )
     return 0
 
