@@ -144,8 +144,8 @@ DISTANCIA_PRUEBA_M = 2.5
 # COCO, dejarlo en None hace que postprocess tome el maximo sobre las 80
 # clases, o sea la persona mas confiada del frame: en una cancha de futbol 5
 # eso gana SIEMPRE y el sistema apunta a un jugador en vez de a la pelota.
-CLASE_OBJETIVO = 32
-NOMBRE_CLASE = "sports ball"
+CLASE_OBJETIVO = None            # config_hw.py: tu modelo tiene una sola clase
+NOMBRE_CLASE = "ball"
 
 # Que esperar del modelo generico, para no perder tiempo buscando un bug
 # donde no lo hay:

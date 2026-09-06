@@ -403,7 +403,7 @@ def abrir_inferencia():
         track_hef = getattr(config, "TRACK_HEF_PATH", None) or config.HEF_PATH
         return DualHailoInference(search_hef, track_hef), True
 
-    from hailo_inference import HailoInference
+    from inferencia import HailoInference     # antes: from hailo_inference import ...
 
     return HailoInference(config.HEF_PATH), False
 

@@ -61,7 +61,8 @@ NATIVE_FPS = 60
 # MODELO / ENTRADA A LA NPU
 # =============================================================================
 
-HEF_PATH = "yolov26n_coco.hef"   
+HEF_PATH = "yolov26n_coco.hef"      # lo usa el backend Hailo, en la Pi
+MODELO_PT = "run_yolo26n_sesiones_1152x640px_300ep.pt"     # lo usa el backend Ultralytics, en la PC
 
 # CORREGIDO. Antes decía 1152 (escalar, cuadrado). El modelo NO es
 # cuadrado: `hailortcli parse-hef` reporta NHWC(640x1152x3), o sea
@@ -70,7 +71,7 @@ HEF_PATH = "yolov26n_coco.hef"
 #
 # El código lo lee de hailo.input_shape en tiempo de ejecución, así que
 # esto es solo respaldo. Formato: (alto, ancho).
-MODEL_INPUT_SIZE = (640, 640)
+MODEL_INPUT_SIZE = (640, 1152)   # alto, ancho. Hoy dice (640, 640)
 
 MODEL_INPUT_CHANNELS = 3
 

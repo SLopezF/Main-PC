@@ -404,7 +404,7 @@ def inicializar(args) -> Sistema:
 
     # --------------------------------------------------------- MODELO Y CAMARAS
     _titulo("5/5  MODELO Y CAMARAS")
-    from hailo_inference import HailoInference
+    from inferencia import HailoInference     # antes: from hailo_inference import ...
 
     sis.hailo = HailoInference(config.HEF_PATH)
     print(sis.hailo.describe())
