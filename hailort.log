@@ -1,0 +1,63 @@
+[2026-09-03 20:28:28.794] [5584] [HailoRT] [error] [file_utils.cpp:124] [open] CHECK failed - Failed opening file, path: yolo26n.hef
+[2026-09-03 20:28:28.800] [5584] [HailoRT] [error] [hef.cpp:560] [parse_hef_file] CHECK_SUCCESS failed with status=HAILO_OPEN_FILE_FAILURE(13)
+[2026-09-03 20:28:28.801] [5584] [HailoRT] [error] [hef.cpp:1060] [Impl] Failed parsing HEF file
+[2026-09-03 20:28:28.801] [5584] [HailoRT] [error] [hef.cpp:333] [create] Failed creating HEF
+[2026-09-03 20:28:28.803] [5584] [HailoRT] [error] [hef.cpp:168] [create] CHECK_SUCCESS failed with status=HAILO_OPEN_FILE_FAILURE(13)
+[2026-09-03 21:15:55.976] [7906] [HailoRT] [error] [file_utils.cpp:124] [open] CHECK failed - Failed opening file, path: yolov26n_coco.hef
+[2026-09-03 21:15:55.981] [7906] [HailoRT] [error] [hef.cpp:560] [parse_hef_file] CHECK_SUCCESS failed with status=HAILO_OPEN_FILE_FAILURE(13)
+[2026-09-03 21:15:55.983] [7906] [HailoRT] [error] [hef.cpp:1060] [Impl] Failed parsing HEF file
+[2026-09-03 21:15:55.983] [7906] [HailoRT] [error] [hef.cpp:333] [create] Failed creating HEF
+[2026-09-03 21:15:55.984] [7906] [HailoRT] [error] [hef.cpp:168] [create] CHECK_SUCCESS failed with status=HAILO_OPEN_FILE_FAILURE(13)
+[2026-09-03 21:16:27.917] [7952] [HailoRT] [info] [vdevice.cpp:535] [create] Creating vdevice with params: device_count: 1, scheduling_algorithm: NONE, multi_process_service: false
+[2026-09-03 21:16:27.935] [7952] [HailoRT] [info] [device.cpp:51] [Device] OS Version: Linux 6.18.39+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.18.39-1+rpt1 (2026-07-29) aarch64
+[2026-09-03 21:16:27.935] [7952] [HailoRT] [info] [control.cpp:113] [control__parse_identify_results] firmware_version is: 4.23.0
+[2026-09-03 21:16:27.935] [7952] [HailoRT] [info] [vdevice.cpp:682] [create] VDevice Infos: 0001:01:00.0
+[2026-09-03 21:16:27.946] [7952] [HailoRT] [info] [internal_buffer_manager.cpp:77] [print_execution_results] Planned internal buffer memory: CMA=0 CMA-Desc=720896 Pinned=1390080. memory to edge layer usage factor is 1
+[2026-09-03 21:16:27.946] [7952] [HailoRT] [info] [internal_buffer_manager.cpp:86] [print_execution_results] Default Internal buffer planner executed successfully
+[2026-09-03 21:16:27.975] [7952] [HailoRT] [info] [device_internal.cpp:57] [configure] Configuring HEF took 39.28109 milliseconds
+[2026-09-03 21:16:27.975] [7952] [HailoRT] [info] [vdevice.cpp:780] [configure] Configuring HEF on VDevice took 39.938312 milliseconds
+[2026-09-03 21:16:27.975] [7952] [HailoRT] [info] [hef.cpp:1994] [get_network_group_and_network_name] No name was given. Addressing all networks of default network_group: yolo26n
+[2026-09-03 21:16:27.976] [7952] [HailoRT] [info] [hef.cpp:1994] [get_network_group_and_network_name] No name was given. Addressing all networks of default network_group: yolo26n
+[2026-09-03 21:16:27.979] [7952] [HailoRT] [info] [edge_elements.cpp:52] [create] Created (HwWriteEl3yolo26n/input_layer1 | hw_frame_size: 1228800)
+[2026-09-03 21:16:27.980] [7952] [HailoRT] [info] [queue_elements.cpp:284] [create] Created (PushQEl3yolo26n/input_layer1 | timeout: 10s)
+[2026-09-03 21:16:27.980] [7952] [HailoRT] [info] [filter_elements.cpp:101] [create] Created (PreInferEl3yolo26n/input_layer1 | Reorder - src_order: NHWC, src_shape: (640, 640, 3), dst_order: NHCW, dst_shape: (640, 640, 3))
+[2026-09-03 21:16:27.980] [7952] [HailoRT] [info] [vstream.cpp:754] [InputVStreamImpl] Creating yolo26n/input_layer1...
+[2026-09-03 21:16:27.980] [7952] [HailoRT] [info] [vstream_builder.cpp:102] [create_inputs] Input pipeline 'yolo26n/input_layer1': (PreInferEl3yolo26n/input_layer1 | Reorder - src_order: NHWC, src_shape: (640, 640, 3), dst_order: NHCW, dst_shape: (640, 640, 3)) >> (PushQEl3yolo26n/input_layer1 | timeout: 10s) >> (HwWriteEl3yolo26n/input_layer1 | hw_frame_size: 1228800) >> HW
+[2026-09-03 21:16:27.980] [7952] [HailoRT] [info] [edge_elements.cpp:287] [create] Created (HwReadEl14yolo26n/conv61 | hw_frame_size: 51200)
+[2026-09-03 21:16:27.980] [7952] [HailoRT] [info] [queue_elements.cpp:657] [create] Created (PullQEl_hw_read14yolo26n/conv61)
+[2026-09-03 21:16:27.980] [7952] [HailoRT] [info] [filter_elements.cpp:372] [create] Created (PostInferEl14yolo26n/conv61 | Quantization - src_type: UINT16, dst_type FLOAT32, limvals_min: -0.825702, limvals_max: 9.2735)
+[2026-09-03 21:16:27.980] [7952] [HailoRT] [info] [queue_elements.cpp:800] [create] Created (UserBuffQEl14yolo26n/conv61 | timeout: 10s)
+[2026-09-03 21:16:27.980] [7952] [HailoRT] [info] [vstream.cpp:1114] [OutputVStreamImpl] Creating yolo26n/conv61...
+[2026-09-03 21:16:27.980] [7952] [HailoRT] [info] [vstream_builder.cpp:220] [create_outputs] Output pipeline 'yolo26n/conv61': HW >> (HwReadEl14yolo26n/conv61 | hw_frame_size: 51200) >> (PullQEl_hw_read14yolo26n/conv61) >> (PostInferEl14yolo26n/conv61 | Quantization - src_type: UINT16, dst_type FLOAT32, limvals_min: -0.825702, limvals_max: 9.2735) >> (UserBuffQEl14yolo26n/conv61 | timeout: 10s)
+[2026-09-03 21:16:27.980] [7952] [HailoRT] [info] [edge_elements.cpp:287] [create] Created (HwReadEl15yolo26n/conv64 | hw_frame_size: 1024000)
+[2026-09-03 21:16:27.980] [7952] [HailoRT] [info] [queue_elements.cpp:657] [create] Created (PullQEl_hw_read15yolo26n/conv64)
+[2026-09-03 21:16:27.980] [7952] [HailoRT] [info] [filter_elements.cpp:372] [create] Created (PostInferEl15yolo26n/conv64 | Quantization - src_type: UINT16, dst_type FLOAT32, limvals_min: -46.6097, limvals_max: 2.33623)
+[2026-09-03 21:16:27.980] [7952] [HailoRT] [info] [queue_elements.cpp:800] [create] Created (UserBuffQEl15yolo26n/conv64 | timeout: 10s)
+[2026-09-03 21:16:27.980] [7952] [HailoRT] [info] [vstream.cpp:1114] [OutputVStreamImpl] Creating yolo26n/conv64...
+[2026-09-03 21:16:27.980] [7952] [HailoRT] [info] [vstream_builder.cpp:220] [create_outputs] Output pipeline 'yolo26n/conv64': HW >> (HwReadEl15yolo26n/conv64 | hw_frame_size: 1024000) >> (PullQEl_hw_read15yolo26n/conv64) >> (PostInferEl15yolo26n/conv64 | Quantization - src_type: UINT16, dst_type FLOAT32, limvals_min: -46.6097, limvals_max: 2.33623) >> (UserBuffQEl15yolo26n/conv64 | timeout: 10s)
+[2026-09-03 21:16:27.980] [7952] [HailoRT] [info] [edge_elements.cpp:287] [create] Created (HwReadEl11yolo26n/conv77 | hw_frame_size: 12800)
+[2026-09-03 21:16:27.980] [7952] [HailoRT] [info] [queue_elements.cpp:657] [create] Created (PullQEl_hw_read11yolo26n/conv77)
+[2026-09-03 21:16:27.980] [7952] [HailoRT] [info] [filter_elements.cpp:372] [create] Created (PostInferEl11yolo26n/conv77 | Quantization - src_type: UINT16, dst_type FLOAT32, limvals_min: -0.188352, limvals_max: 16.492)
+[2026-09-03 21:16:27.980] [7952] [HailoRT] [info] [queue_elements.cpp:800] [create] Created (UserBuffQEl11yolo26n/conv77 | timeout: 10s)
+[2026-09-03 21:16:27.980] [7952] [HailoRT] [info] [vstream.cpp:1114] [OutputVStreamImpl] Creating yolo26n/conv77...
+[2026-09-03 21:16:27.980] [7952] [HailoRT] [info] [vstream_builder.cpp:220] [create_outputs] Output pipeline 'yolo26n/conv77': HW >> (HwReadEl11yolo26n/conv77 | hw_frame_size: 12800) >> (PullQEl_hw_read11yolo26n/conv77) >> (PostInferEl11yolo26n/conv77 | Quantization - src_type: UINT16, dst_type FLOAT32, limvals_min: -0.188352, limvals_max: 16.492) >> (UserBuffQEl11yolo26n/conv77 | timeout: 10s)
+[2026-09-03 21:16:27.980] [7952] [HailoRT] [info] [edge_elements.cpp:287] [create] Created (HwReadEl13yolo26n/conv80 | hw_frame_size: 256000)
+[2026-09-03 21:16:27.981] [7952] [HailoRT] [info] [queue_elements.cpp:657] [create] Created (PullQEl_hw_read13yolo26n/conv80)
+[2026-09-03 21:16:27.981] [7952] [HailoRT] [info] [filter_elements.cpp:372] [create] Created (PostInferEl13yolo26n/conv80 | Quantization - src_type: UINT16, dst_type FLOAT32, limvals_min: -191.15, limvals_max: 3.18485)
+[2026-09-03 21:16:27.981] [7952] [HailoRT] [info] [queue_elements.cpp:800] [create] Created (UserBuffQEl13yolo26n/conv80 | timeout: 10s)
+[2026-09-03 21:16:27.981] [7952] [HailoRT] [info] [vstream.cpp:1114] [OutputVStreamImpl] Creating yolo26n/conv80...
+[2026-09-03 21:16:27.981] [7952] [HailoRT] [info] [vstream_builder.cpp:220] [create_outputs] Output pipeline 'yolo26n/conv80': HW >> (HwReadEl13yolo26n/conv80 | hw_frame_size: 256000) >> (PullQEl_hw_read13yolo26n/conv80) >> (PostInferEl13yolo26n/conv80 | Quantization - src_type: UINT16, dst_type FLOAT32, limvals_min: -191.15, limvals_max: 3.18485) >> (UserBuffQEl13yolo26n/conv80 | timeout: 10s)
+[2026-09-03 21:16:27.981] [7952] [HailoRT] [info] [edge_elements.cpp:287] [create] Created (HwReadEl0yolo26n/conv91 | hw_frame_size: 6400)
+[2026-09-03 21:16:27.981] [7952] [HailoRT] [info] [queue_elements.cpp:657] [create] Created (PullQEl_hw_read0yolo26n/conv91)
+[2026-09-03 21:16:27.981] [7952] [HailoRT] [info] [filter_elements.cpp:372] [create] Created (PostInferEl0yolo26n/conv91 | Quantization - src_type: UINT16, dst_type FLOAT32, limvals_min: -0.0952498, limvals_max: 18.8202 | Reorder - src_order: FCR, src_shape: (20, 20, 8), dst_order: FCR, dst_shape: (20, 20, 4))
+[2026-09-03 21:16:27.981] [7952] [HailoRT] [info] [queue_elements.cpp:800] [create] Created (UserBuffQEl0yolo26n/conv91 | timeout: 10s)
+[2026-09-03 21:16:27.981] [7952] [HailoRT] [info] [vstream.cpp:1114] [OutputVStreamImpl] Creating yolo26n/conv91...
+[2026-09-03 21:16:27.981] [7952] [HailoRT] [info] [vstream_builder.cpp:220] [create_outputs] Output pipeline 'yolo26n/conv91': HW >> (HwReadEl0yolo26n/conv91 | hw_frame_size: 6400) >> (PullQEl_hw_read0yolo26n/conv91) >> (PostInferEl0yolo26n/conv91 | Quantization - src_type: UINT16, dst_type FLOAT32, limvals_min: -0.0952498, limvals_max: 18.8202 | Reorder - src_order: FCR, src_shape: (20, 20, 8), dst_order: FCR, dst_shape: (20, 20, 4)) >> (UserBuffQEl0yolo26n/conv91 | timeout: 10s)
+[2026-09-03 21:16:27.981] [7952] [HailoRT] [info] [edge_elements.cpp:287] [create] Created (HwReadEl1yolo26n/conv94 | hw_frame_size: 64000)
+[2026-09-03 21:16:27.981] [7952] [HailoRT] [info] [queue_elements.cpp:657] [create] Created (PullQEl_hw_read1yolo26n/conv94)
+[2026-09-03 21:16:27.981] [7952] [HailoRT] [info] [filter_elements.cpp:372] [create] Created (PostInferEl1yolo26n/conv94 | Quantization - src_type: UINT16, dst_type FLOAT32, limvals_min: -156.296, limvals_max: 3.59132)
+[2026-09-03 21:16:27.981] [7952] [HailoRT] [info] [queue_elements.cpp:800] [create] Created (UserBuffQEl1yolo26n/conv94 | timeout: 10s)
+[2026-09-03 21:16:27.981] [7952] [HailoRT] [info] [vstream.cpp:1114] [OutputVStreamImpl] Creating yolo26n/conv94...
+[2026-09-03 21:16:27.981] [7952] [HailoRT] [info] [vstream_builder.cpp:220] [create_outputs] Output pipeline 'yolo26n/conv94': HW >> (HwReadEl1yolo26n/conv94 | hw_frame_size: 64000) >> (PullQEl_hw_read1yolo26n/conv94) >> (PostInferEl1yolo26n/conv94 | Quantization - src_type: UINT16, dst_type FLOAT32, limvals_min: -156.296, limvals_max: 3.59132) >> (UserBuffQEl1yolo26n/conv94 | timeout: 10s)
+[2026-09-03 21:16:27.982] [7952] [HailoRT] [info] [core_op.cpp:156] [activate] Activating yolo26n took 0.775851 milliseconds. Note that the function is asynchronous and thus the network is not fully activated yet.
+[2026-09-03 21:16:27.982] [7952] [HailoRT] [info] [core_op.cpp:156] [activate] Activating yolo26n took 0.795703 milliseconds. Note that the function is asynchronous and thus the network is not fully activated yet.
