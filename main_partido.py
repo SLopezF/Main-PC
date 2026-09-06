@@ -89,19 +89,11 @@ class GestorCamaras:
         self._abiertas: dict[int, object] = {}
 
     def _abrir(self, indice: int):
-        from camera_source import CameraSource
-
-        print(f"[cam] abriendo camara {indice} "
+        import fuente
+        print(f"[cam] abriendo fuente {indice} "
               f"({self.ancho}x{self.alto} @ {self.fps} fps)...")
-        return CameraSource(
-            size=(self.ancho, self.alto),
-            fps=self.fps,
-            buffer_count=getattr(config, "CAM_BUFFERS", 4),
-            exposicion_us=config.CAM_EXPOSICION_US,
-            ganancia=config.CAM_GANANCIA,
-            enfoque=config.CAM_ENFOQUE,
-            indice=indice,
-        )
+        return fuente.abrir_fuente(indice, size=(self.ancho, self.alto),
+                                   fps=self.fps)
 
     def leer(self, indice: int):
         """Frame mas reciente de la camara `indice`, mas su metadata."""

@@ -124,7 +124,7 @@ MOTOR_PASOS_VUELTA = 200
 #
 # True  = frame entero con letterbox. Para la prueba de cerca.
 # False = mosaico de SEARCH_TILE_GRID tiles. Para la cancha de verdad.
-SEARCH_FULL = True
+SEARCH_FULL = False
 
 # Para el aviso de arranque: con esto se estima a cuantos pixeles va a quedar
 # la pelota y se avisa si queda demasiado chica.
