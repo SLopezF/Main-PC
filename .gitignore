@@ -1,0 +1,88 @@
+# =============================================================================
+# DATOS: se pasan por Drive, no por git
+# =============================================================================
+# Las imagenes y los videos son pesados, no tienen diff util y se regeneran
+# grabando de nuevo. Las salidas (csv, mp4 anotado) son PRODUCTO de correr el
+# codigo: si el codigo esta versionado, las salidas se pueden rehacer.
+#
+# Lo que SI se versiona de una corrida son los numeros del resumen, a mano, en
+# ESTADO.md. Eso es lo que hay que poder leer dentro de seis meses, no 300 MB
+# de jpg.
+
+imagenes/
+videos/
+salidas/
+dataset/
+
+# Por si algo se escapa a la raiz
+*.mp4
+*.mkv
+*.avi
+*.jpg
+*.jpeg
+*.png
+*.csv
+
+# ...pero estos si van: documentacion del repo
+!docs/**/*.png
+!docs/**/*.jpg
+
+
+# =============================================================================
+# MODELOS
+# =============================================================================
+# Los .pt SI se versionan (decision tomada): son la unica forma de reproducir
+# un resultado de la tesis. Nombralos con version (..._300ep.pt) y no
+# sobrescribas: en git el costo es el mismo y asi podes volver atras.
+#
+# Borra los .pt de experimentos fallidos ANTES del primer commit: una vez
+# commiteados quedan en el historial para siempre aunque los borres despues.
+#
+# Los .hef NO: se compilan a partir del .pt y solo sirven en la Pi.
+*.hef
+*.onnx
+runs/                     # carpeta de salida de entrenamiento de ultralytics
+
+
+# =============================================================================
+# LOGS DE HARDWARE
+# =============================================================================
+# hailort.log lo reescribe HailoRT en cada corrida en la Pi. Versionarlo es
+# ruido de diff garantizado.
+hailort.log
+*.log
+
+
+# =============================================================================
+# PYTHON
+# =============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+
+
+# =============================================================================
+# EDITOR / SISTEMA OPERATIVO
+# =============================================================================
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store
+
+
+# =============================================================================
+# SECRETOS
+# =============================================================================
+# Ver modelos/README.md: la password del Wi-Fi de la GoPro esta hoy en texto
+# plano en config_hw.py. Si el repo se hace publico, hay que sacarla a un
+# .env, y acordarse de que en el historial YA quedo.
+.env
+secretos.py

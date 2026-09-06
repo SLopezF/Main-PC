@@ -71,7 +71,7 @@ MODELO_PT = "run_yolo26n_sesiones_1152x640px_300ep.pt"     # lo usa el backend U
 #
 # El código lo lee de hailo.input_shape en tiempo de ejecución, así que
 # esto es solo respaldo. Formato: (alto, ancho).
-MODEL_INPUT_SIZE = (640, 1152)   # alto, ancho. Hoy dice (640, 640)
+MODEL_INPUT_SIZE = (640, 1152)   # alto, ancho
 
 MODEL_INPUT_CHANNELS = 3
 
@@ -79,6 +79,18 @@ MODEL_INPUT_CHANNELS = 3
 # efectiva es 0.988, o sea casi resolución nativa: la pelota se mantiene
 # en ~17 px. Meter el frame entero en el modelo daría 8.5 px, donde la
 # confianza medida cae a 0.0025.
+# Orden de canales que entrega la fuente de frames. True = BGR, que es lo que
+# devuelven las DOS fuentes de fuente.py: cv2.imread() y Picamera2 con formato
+# "RGB888" (el nombre viene del empaquetado de bytes, no del orden en numpy).
+# preproceso._a_rgb() convierte a RGB, que es lo que espera el modelo.
+#
+# PENDIENTE DE P1: esto NO se confirmo todavia contra la camara real con
+# CameraSource.verificar_canales(). Si aquello dice que el array ya viene en
+# RGB, se pone False ACA y no se toca ningun cvtColor. El modelo rinde 0.879
+# contra 0.859 en recorte nativo y 0.476 contra 0.061 en frame reducido, o sea
+# que equivocarse cuesta un factor 8 en el caso peor y es invisible a ojo.
+FUENTE_ENTREGA_BGR = True
+
 SEARCH_TILE_GRID = (2, 2)
 
 
