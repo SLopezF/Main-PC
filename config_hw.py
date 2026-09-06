@@ -206,6 +206,64 @@ MS_MINIMO_ENTRE_CAMBIOS = 1000.0
 
 
 # =============================================================================
+# SECTORES DEL MOTOR  (P4)
+# =============================================================================
+# LA DECISION DE DISEÑO CENTRAL DEL TRABAJO:
+# el motor NO apunta a la pelota, apunta al CENTRO DEL SECTOR donde esta la
+# jugada. Un video que sigue la pelota permanentemente marea y se ve amateur;
+# lo que se busca es una transmision, o sea la camara quieta la mayor parte
+# del tiempo y movimientos poco frecuentes y bien justificados.
+#
+# Con un FOV de mas de 100 grados en la GoPro desde 3 m de altura, un error de
+# medio sector (10 grados) no saca la pelota del cuadro.
+
+# 7 sectores de 20 grados sobre 20..160.
+SECTOR_DESDE = 20.0
+SECTOR_HASTA = 160.0
+N_SECTORES = 7
+# bordes  = [20, 40, 60, 80, 100, 120, 140, 160]
+# centros = [30, 50, 70, 90, 110, 130, 150]
+
+# --- Schmitt trigger ---------------------------------------------------------
+# Para pasar del sector i al i+1 no alcanza con cruzar el borde: hay que
+# superarlo por este margen. Sin esto, una pelota parada justo sobre un borde
+# hace saltar el motor de ida y vuelta indefinidamente.
+#
+# TENTATIVO (arranque del briefing). Se ajusta mirando el video de cancha: si
+# el motor se ve nervioso, subir.
+HISTERESIS_SECTOR_DEG = 5.0
+
+# Ademas del margen, la condicion tiene que SOSTENERSE este tiempo. El margen
+# solo no alcanza porque el ruido de la deteccion (la pelota "salta" varios
+# grados entre frames) puede superarlo; la permanencia sola tampoco, porque
+# una pelota que se queda sobre el limite la cumple todo el tiempo.
+#
+# TENTATIVO. El valor viejo del diseño de 9 zonas era 1500 ms.
+MS_PERMANENCIA = 600.0
+
+# Piso duro entre movimientos del motor, pase lo que pase.
+MS_MINIMO_ENTRE_MOVIMIENTOS = 800.0
+
+# --- Excepcion por regimen ---------------------------------------------------
+# Si la velocidad angular supera esto, se saltea la PERMANENCIA y se mueve ya.
+# Un pelotazo cruza un sector de 20 grados en unos 100 ms: esperar 600 ms lo
+# perderia. La histeresis en grados se sigue exigiendo igual.
+#
+# En grados por segundo. Se ajusta mirando la columna omega del CSV: ahi se ve
+# el corte real entre jugada trabada y pelotazo.
+OMEGA_RAPIDA = 28.0
+OMEGA_LENTA = 13.0
+
+# El motor da la vuelta a la cancha en menos de medio segundo y es silencioso,
+# asi que su velocidad no es una restriccion de diseño en ningun lado.
+
+# Si no se ve la pelota por este tiempo, el motor va al centro (90 grados) y se
+# queda ahi. En SEARCH el motor NO se mueve hasta que pasa esto.
+# TENTATIVO.
+S_SEARCH_A_CENTRO = 25.0
+
+
+# =============================================================================
 # GOPRO
 # =============================================================================
 

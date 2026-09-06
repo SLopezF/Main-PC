@@ -17,7 +17,7 @@ Ultima actualizacion: 2026-09-06
 | P1 dos camaras + `grabar_dataset.py` | **no empezado** | necesita las dos camaras fisicas |
 | P2 `preproceso.py` + `replay.py` | **CERRADO** | linea de base medida: 84.8% TRACK, 79.7% aceptadas |
 | P3 `tracker.py` | **CERRADO** | 92.4% TRACK (base 84.8%), 1 caida (base 3) |
-| P4 `sectores.py` | no empezado | |
+| P4 `sectores.py` | **CERRADO** | 14/14 tests; los 3 criterios del briefing |
 | P5 a P8 | no empezado | |
 
 ### Trabajo fuera de los pasos numerados (hecho, y era prerrequisito)
@@ -462,35 +462,80 @@ predecir solo empeora el resto.
 
 ---
 
+## P4 — `sectores.py` CERRADO
+
+**Archivos creados:** `sectores.py`, `test_sectores.py`
+**Tocados:** `config_hw.py` (constantes nuevas), `config.py` (se saco el bloque
+viejo de 9 zonas)
+
+7 sectores de 20 grados sobre 20..160. Bordes [20,40,60,80,100,120,140,160],
+centros [30,50,70,90,110,130,150]. **El motor va SIEMPRE al centro del sector**,
+nunca al angulo exacto de la pelota: hay un test que lo fija.
+
+### Los tres frenos
+
+1. **Margen** `HISTERESIS_SECTOR_DEG = 5` — el sector actual se ensancha 5
+   grados a cada lado.
+2. **Permanencia** `MS_PERMANENCIA = 600 ms` votando al MISMO sector.
+3. **Piso** `MS_MINIMO_ENTRE_MOVIMIENTOS = 800 ms` entre movimientos.
+
+Excepcion por regimen: con `|omega| >= OMEGA_RAPIDA` se saltea la permanencia
+(no el margen: el ruido de la deteccion no desaparece porque la pelota vaya
+rapido). Hay un test para eso.
+
+### Verificacion — los tres criterios del briefing
+
+`python3 test_sectores.py` — 14/14.
+
+| criterio | pedido | medido |
+|---|---|---|
+| rampa lenta 20->160 | exactamente 6 cambios | **6** (sectores 1..6) |
+| senoidal +-4 sobre un borde, 30 s | **cero** cambios | **0** |
+| salto de 60 con omega alta | cambio en < 100 ms | **< 100 ms** |
+
+Mas los tres frenos por separado, el reinicio del voto al cambiar de
+candidato, y un control de la senoidal (con +-12 grados SI cambia, para que el
+test de los cero cambios no pase por estar todo roto).
+
+### Constantes: se mudaron a config_hw.py
+
+`SECTOR_DESDE/HASTA`, `N_SECTORES = 7`, `HISTERESIS_SECTOR_DEG = 5.0`,
+`MS_PERMANENCIA = 600.0`, `MS_MINIMO_ENTRE_MOVIMIENTOS = 800.0`,
+`OMEGA_RAPIDA/LENTA`, `S_SEARCH_A_CENTRO = 25.0`.
+
+Se BORRO de `config.py` el bloque de 9 zonas de 15.6 grados con permanencia de
+1500 ms, que era del diseño viejo y contradecia a este. Queda un comentario
+apuntando a config_hw.
+
+`HISTERESIS_SECTOR_DEG`, `MS_PERMANENCIA` y `S_SEARCH_A_CENTRO` son
+**tentativos**: se ajustan mirando el video de cancha. Si el motor se ve
+nervioso, subir; si llega tarde, bajar.
+
+### Comando
+
+```
+python3 sectores.py          # describe la particion y el sector de cada angulo
+python3 test_sectores.py
+```
+
+---
+
 ## Proximo paso
 
-**P4: `sectores.py` + `test_sectores.py`.** Python puro, sin hardware ni
-material grabado: se puede escribir y testear entero ahora.
+**P5: `init_sistema.py`** — el arranque completo contra el hardware. Encoder,
+motor, homing verificado contra el encoder, y los tres errores medidos por
+debajo de `TOLERANCIA_HOMING_DEG`. **Necesita la Raspberry Pi con el fierro
+conectado**: no se puede escribir a ciegas y validar despues, porque todo su
+valor esta en los numeros que mide.
 
-Entra `(angulo, omega, t)`, sale `(sector, cambio, angulo_objetivo, motivo)`.
-7 sectores de 20 grados sobre 20..160, centros en 30/50/70/90/110/130/150.
-**El motor va SIEMPRE al centro del sector, nunca al angulo exacto de la
-pelota**: esa es la decision de diseño central de la tesis, la que hace que la
-camara este quieta la mayor parte del tiempo.
-
-Schmitt trigger sobre los bordes: para pasar del sector i al i+1, el angulo
-tiene que superar el borde por `HISTERESIS_SECTOR_DEG` (arranque 5) y
-sostenerlo `MS_PERMANENCIA` (arranque 600 ms), y tiene que haber pasado
-`MS_MINIMO_ENTRE_MOVIMIENTOS` desde el ultimo salto. Excepcion por regimen: si
-|omega| supera `OMEGA_RAPIDA` se saltea la permanencia (un pelotazo cruza un
-sector de 20 grados en ~100 ms).
-
-Criterio de aceptacion, tres tests: rampa lenta de 20 a 160 grados -> 6
-cambios exactos; senoidal de mas/menos 4 grados sobre un borde durante 30 s ->
-CERO cambios; salto de 60 grados con omega alta -> un cambio en menos de
-100 ms.
-
-`config.py` conserva `N_ZONAS = 9` y `MS_PERMANENCIA = 1500.0` del diseño
-viejo (zonas de 15.6 grados): hay que reemplazarlos por los 7 sectores de 20 y
-600 ms, y reescribir el comentario que hoy explica los 15.6.
+Alternativa si no hay Pi a mano: **P6 `control_motor.py`**, el hilo no
+bloqueante, que SI se puede probar sin hardware usando `hw_falsos.Motor` (hay
+que completarle `mover_pasos`, `ir_a_pasos`, `info_movimiento` y
+`en_movimiento`). Su criterio de aceptacion es que `apuntar()` nunca tarde mas
+de 1 ms, y eso se mide con el motor falso.
 
 **Ojo con `omega`**: el tracker entrega velocidad en px/s (`vx`, `vy`). La
-conversion a grados por segundo del mundo la tiene que hacer quien llama,
-con `geometria.pixel_a_angulo` sobre dos posiciones consecutivas. Y hasta P8
-los angulos salen de `CAM_CENTRO_ANGULO` inventado, asi que `sectores.py` se
-valida con angulos sinteticos, no con el CSV.
+conversion a grados por segundo del mundo la hace quien llama, con
+`geometria.pixel_a_angulo` sobre dos posiciones consecutivas. Hasta P8 los
+angulos salen de `CAM_CENTRO_ANGULO` inventado, asi que la columna `sector`
+del CSV no va a significar nada real hasta calibrar.

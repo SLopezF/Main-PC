@@ -119,7 +119,8 @@ solo script para los dos.
 
 ```
 python test_preproceso.py               # 10, grilla y remapeo de coordenadas
-python test_tracker.py                  # 23, Kalman, gate y patron de SEARCH
+python test_tracker.py                  # 25, Kalman, gate y patron de SEARCH
+python test_sectores.py                 # 14, Schmitt trigger de los sectores
 python test_inferencia_ultralytics.py   # contrato del backend, sin .pt real
 ```
 
@@ -132,6 +133,7 @@ Ninguno necesita modelo, camara ni NPU.
 ```
 python preproceso.py                    # describe la grilla de SEARCH
 python preproceso.py --ancho 2304 --alto 1296 --modelo 1152x640
+python sectores.py                      # particion en sectores y sus umbrales
 ```
 
 Deteccion sobre UNA imagen, con la caja dibujada y sin maquina de estados:

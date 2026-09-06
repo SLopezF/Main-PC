@@ -62,7 +62,7 @@ NATIVE_FPS = 60
 # =============================================================================
 
 HEF_PATH = "yolov26n_coco.hef"      # lo usa el backend Hailo, en la Pi
-MODELO_PT = "modelos/run_yolo26n_sesiones_1152x640px_300ep.pt"
+MODELO_PT = "run_yolo26n_sesiones_1152x640px_300ep.pt"     # lo usa el backend Ultralytics, en la PC
 
 # CORREGIDO. Antes decía 1152 (escalar, cuadrado). El modelo NO es
 # cuadrado: `hailortcli parse-hef` reporta NHWC(640x1152x3), o sea
@@ -239,19 +239,10 @@ TABLA_CALIBRACION = []
 FOV_HORIZONTAL = 100.0
 ANGULO_CENTRO = 90.0
 
-N_ZONAS = 9
-ANGULO_DESDE = 20.0
-ANGULO_HASTA = 160.0
-
-# Fracción del ancho de zona. Con zonas de 15.6°, 0.25 da ±3.9°, que
-# aguanta una pelota oscilando ±3° sobre la línea sin mover el motor.
-HISTERESIS = 0.25
-MS_PERMANENCIA = 1500.0
-
-# Umbrales de régimen, en grados por segundo. Ajustalos mirando la
-# columna `omega` del CSV: ahí se ve el corte real entre jugada trabada
-# y pelotazo.
-OMEGA_RAPIDA = 28.0
-OMEGA_LENTA = 13.0
+# LAS ZONAS SE MUDARON A config_hw.py. Este bloque definia 9 zonas de 15.6
+# grados con permanencia de 1500 ms; el diseño actual son 7 SECTORES de 20
+# grados con permanencia de 600 ms, y sus constantes viven en config_hw.py
+# (SECTOR_DESDE, N_SECTORES, HISTERESIS_SECTOR_DEG, MS_PERMANENCIA,
+# MS_MINIMO_ENTRE_MOVIMIENTOS, OMEGA_RAPIDA, OMEGA_LENTA).
 
 FILTRO_ALFA = 0.4
