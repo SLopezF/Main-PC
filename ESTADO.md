@@ -17,8 +17,9 @@ Ultima actualizacion: 2026-09-06
 | P1 dos camaras + `grabar_dataset.py` | **no empezado** | necesita las dos camaras fisicas |
 | P2 `preproceso.py` + `replay.py` | **CERRADO** | linea de base medida: 84.8% TRACK, 79.7% aceptadas |
 | P3 `tracker.py` | **CERRADO** | 92.4% TRACK (base 84.8%), 1 caida (base 3) |
-| P4 `sectores.py` | **CERRADO** | 14/14 tests; los 3 criterios del briefing |
-| P5 a P8 | no empezado | |
+| P4 `sectores.py` | **CERRADO** | 20/20 tests; 9 sectores sobre 0..180 |
+| P5 `init_sistema.py` | **escrito, sin validar en fierro** | 11/11 tests con hw_falsos |
+| P6 a P8 | no empezado | |
 
 ### Trabajo fuera de los pasos numerados (hecho, y era prerrequisito)
 
@@ -468,9 +469,28 @@ predecir solo empeora el resto.
 **Tocados:** `config_hw.py` (constantes nuevas), `config.py` (se saco el bloque
 viejo de 9 zonas)
 
-7 sectores de 20 grados sobre 20..160. Bordes [20,40,60,80,100,120,140,160],
-centros [30,50,70,90,110,130,150]. **El motor va SIEMPRE al centro del sector**,
-nunca al angulo exacto de la pelota: hay un test que lo fija.
+**9 sectores de 20 grados sobre 0..180**, o sea el semiplano completo.
+Bordes [0,20,...,180], centros [10,30,50,70,90,110,130,150,170]. **El motor va
+SIEMPRE al centro del sector**, nunca al angulo exacto de la pelota: hay un
+test que lo fija.
+
+### Cambios respecto del briefing (pedidos y probados)
+
+1. **9 sectores sobre 0..180, no 7 sobre 20..160.** El diseño original perdia
+   los dos extremos, y con las camaras cubriendo 0..102 y 78..180 esos
+   extremos SI se ven: una jugada contra el lateral cae ahi. Verificado que el
+   motor los alcanza: el centro mas extremo (10 o 170 del mundo) pide 80
+   grados de motor contra un limite mecanico de 95, o sea 15 de margen.
+2. **`MS_PERMANENCIA = 0`: la permanencia se desactivo.** La espera era
+   contraproducente justo en el pelotazo, que es el caso que importa, y la
+   excepcion por `OMEGA_RAPIDA` solo lo cubria si la estimacion de velocidad
+   angular (ruidosa) superaba el umbral. **Los tres criterios del briefing se
+   siguen cumpliendo sin permanencia**: la histeresis sola alcanza. El codigo
+   quedo, con 0 se saltea; para reactivarla se cambia la constante y los tests
+   correspondientes se auto-activan.
+3. **Cobertura de camaras actualizada** a 102 grados de FOV con centros en 51
+   y 129 (antes 100 con 55 y 125, inventados). Sigue siendo ESTIMADO: se mide
+   en P8.
 
 ### Los tres frenos
 
@@ -489,13 +509,43 @@ rapido). Hay un test para eso.
 
 | criterio | pedido | medido |
 |---|---|---|
-| rampa lenta 20->160 | exactamente 6 cambios | **6** (sectores 1..6) |
+| rampa lenta 0->180 | un cambio por borde interno | **8** (sectores 1..8) |
 | senoidal +-4 sobre un borde, 30 s | **cero** cambios | **0** |
 | salto de 60 con omega alta | cambio en < 100 ms | **< 100 ms** |
 
-Mas los tres frenos por separado, el reinicio del voto al cambiar de
-candidato, y un control de la senoidal (con +-12 grados SI cambia, para que el
-test de los cero cambios no pase por estar todo roto).
+Mas: el semiplano completo cubierto (ningun angulo de 0 a 180 sin sector), los
+frenos por separado, un control de la senoidal (con +-12 grados SI cambia,
+para que el test de los cero cambios no pase por estar todo roto), la
+cobertura por camara, y que los bordes en pixeles crezcan con el angulo (si
+falla, hay una camara espejada y `CAM_ESPEJO` no lo refleja).
+
+### Ver los sectores sobre la imagen
+
+```
+python replay.py --carpeta imagenes/Soleado --camara 0 --lineas-sectores --salida-mp4 salidas/cam0.mp4
+```
+
+Amarillo los bordes con su angulo, cian los centros (adonde va el motor).
+Cobertura calculada con el modelo nominal:
+
+    camara 0:   0..102 grados   sectores [0, 1, 2, 3, 4, 5]
+    camara 1:  78..180 grados   sectores [3, 4, 5, 6, 7, 8]
+    en las DOS:                 sectores [3, 4, 5]
+
+**Esas lineas son una HIPOTESIS, no una verdad**: salen del FOV estimado y del
+modelo de lente lineal, que ignora la distorsion de barril. Sirven para poner
+la pelota en un punto conocido y ver cuanto hay que corregir; esa discrepancia
+es lo que P8 mide bien.
+
+### Costo computacional de pixel -> angulo -> sector
+
+Medido con la tabla de calibracion de 7 puntos cargada:
+
+    pixel_a_angulo    2.2 us
+    + sectorizador    3.5 us
+
+Contra los ~13 ms de una inferencia, es el 0.03% del presupuesto del frame.
+**No es una preocupacion de latencia.**
 
 ### Constantes: se mudaron a config_hw.py
 
@@ -520,19 +570,80 @@ python3 test_sectores.py
 
 ---
 
+## P5 — `init_sistema.py` ESCRITO (falta correrlo en la Pi)
+
+**Archivos creados:** `init_sistema.py`, `test_init_sistema.py`
+
+`inicializar(con_motor=True, con_gopro=True, simular=False) -> Sistema`, mas
+un context manager `arranque()` que cierra pase lo que pase.
+
+### Secuencia
+
+1. Encoder: `aplicar_config()` (soft write, se pierde al cortar la
+   alimentacion), verificar PPR contra `ENC_PPR_ESPERADO`, diagnostico del
+   iman, leer el angulo absoluto X.
+2. Motor: verificar que la ESP32 responde, deshabilitar, corriente,
+   micropasos, velocidad, aceleracion, habilitar.
+3. Homing: mover `HOMING_SENTIDO * (X - ENCODER_GRADOS_EN_MOTOR_CERO) *
+   RELACION_TRANSMISION`, verificar contra el encoder, `motor.zero()`, guardar
+   el offset EN SOFTWARE.
+4. Ir a **180** del mundo (+90 de motor) y verificar.
+5. Ir a **0** del mundo (-90 de motor) y verificar.
+6. Volver a 90 y quedarse ahi.
+
+### Cambios respecto del briefing
+
+- **Los extremos son 0 y 180, no 180 y 90** (confirmado: el eje gira libre,
+  no hay tope mecanico). Se verifican los dos porque un error de ESCALA
+  (relacion de transmision o micropasos mal) no se ve en el homing, que es un
+  movimiento corto, y si en uno de 90 grados. El mensaje de error compara los
+  signos de los dos: mismo signo = offset, signos opuestos = escala.
+- Se agrego una cuarta verificacion en 90 (el reposo).
+
+### Verificacion
+
+`python3 test_init_sistema.py` — 11/11 con `hw_falsos`.
+
+Prueba el FLUJO y sobre todo que **aborte con un mensaje accionable** ante
+cada modo de fallo: PPR distinto del esperado, iman debil o muy cerca, ESP32
+muda, homing fuera de tolerancia, timeout de movimiento. Los tests exigen que
+el mensaje mencione que revisar (`HOMING_SENTIDO`, "cable de solo carga",
+`AS5047D`), no solo que falle.
+
+Tambien verifica que **no se escriba el registro ZPOS** del encoder.
+
+**NO prueba la mecanica**: el motor falso mueve exacto y el encoder falso
+repite lo que dice el motor, asi que en el caso feliz todos los errores dan
+0.00 y eso no significa nada.
+
+### PENDIENTE: correrlo en la Pi
+
+```
+python3 init_sistema.py --sin-gopro
+```
+
+Criterio: los errores por debajo de `TOLERANCIA_HOMING_DEG = 1.5`. **Anotar
+aca los cuatro numeros medidos.**
+
+Nota: `MOTOR_GRADOS_MIN/MAX = +-95` es un limite por SOFTWARE. Con 0 y 180
+pidiendo -/+90 entra, pero con 5 grados de margen. Si el eje gira libre,
+conviene ampliarlo.
+
+---
+
 ## Proximo paso
 
-**P5: `init_sistema.py`** — el arranque completo contra el hardware. Encoder,
-motor, homing verificado contra el encoder, y los tres errores medidos por
-debajo de `TOLERANCIA_HOMING_DEG`. **Necesita la Raspberry Pi con el fierro
-conectado**: no se puede escribir a ciegas y validar despues, porque todo su
-valor esta en los numeros que mide.
+**Correr `init_sistema.py` en la Pi** y anotar los cuatro errores. Es lo unico
+que valida P5, y bloquea P7.
 
-Alternativa si no hay Pi a mano: **P6 `control_motor.py`**, el hilo no
-bloqueante, que SI se puede probar sin hardware usando `hw_falsos.Motor` (hay
+Despues, **P6: `control_motor.py`** — el hilo no bloqueante. `motor_lib.
+esperar_fin()` hace polling serie cada 50 ms con timeout de 12 s: si eso vive
+en el loop principal, el sistema deja de ver la pelota justo cuando el motor
+se mueve. Va en un `threading.Thread` daemon con una `queue.Queue(maxsize=1)`
+que se pisa. Criterio: `apuntar()` llamado a 20 Hz, **ninguna llamada por
+encima de 1 ms**. Se puede probar sin fierro con `hw_falsos.Motor`, al que hay
 que completarle `mover_pasos`, `ir_a_pasos`, `info_movimiento` y
-`en_movimiento`). Su criterio de aceptacion es que `apuntar()` nunca tarde mas
-de 1 ms, y eso se mide con el motor falso.
+`en_movimiento`.
 
 **Ojo con `omega`**: el tracker entrega velocidad en px/s (`vx`, `vy`). La
 conversion a grados por segundo del mundo la hace quien llama, con

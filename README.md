@@ -120,7 +120,8 @@ solo script para los dos.
 ```
 python test_preproceso.py               # 10, grilla y remapeo de coordenadas
 python test_tracker.py                  # 25, Kalman, gate y patron de SEARCH
-python test_sectores.py                 # 14, Schmitt trigger de los sectores
+python test_sectores.py                 # 20, Schmitt trigger de los sectores
+python test_init_sistema.py             # 11, arranque y sus modos de fallo
 python test_inferencia_ultralytics.py   # contrato del backend, sin .pt real
 ```
 
@@ -148,6 +149,8 @@ python inferencia_ultralytics.py --info
 ## Hardware (solo en la Raspberry Pi)
 
 ```
+python init_sistema.py --sin-gopro      # arranque completo con verificacion
+python init_sistema.py --simular        # el flujo, sin tocar fierro
 python motor_lib.py --test              # ida y vuelta de 90 grados
 python motor_lib.py                     # terminal interactiva
 python encoder_lib.py                   # config y monitor del encoder

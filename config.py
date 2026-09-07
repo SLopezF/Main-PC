@@ -61,7 +61,7 @@ NATIVE_FPS = 60
 # MODELO / ENTRADA A LA NPU
 # =============================================================================
 
-HEF_PATH = "yolov26n_coco.hef"      # lo usa el backend Hailo, en la Pi
+HEF_PATH = "yolo26n_sincalib_opt1.hef"      # lo usa el backend Hailo, en la Pi
 MODELO_PT = "run_yolo26n_sesiones_1152x640px_300ep.pt"     # lo usa el backend Ultralytics, en la PC
 
 # CORREGIDO. Antes decía 1152 (escalar, cuadrado). El modelo NO es

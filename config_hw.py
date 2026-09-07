@@ -44,9 +44,9 @@ MOTOR_ACELERACION = 4000           # pasos/s^2
 # --- Homing -----------------------------------------------------------------
 # Dato medido: con el motor en su cero mecanico, el encoder absoluto marca
 # 79 grados. Al arrancar se lee X y se corrige la diferencia.
-ENCODER_GRADOS_EN_MOTOR_CERO = 79.0
+ENCODER_GRADOS_EN_MOTOR_CERO = 89.0
 
-# El motor esta corrido (X - 79) grados. Para volver al home hay que moverlo
+# El motor esta corrido (X - 89) grados. Para volver al home hay que moverlo
 # -(X - 79). Si al probarlo se va para el lado contrario, poné +1 aca en vez
 # de tocar la formula.
 HOMING_SENTIDO = -1
@@ -63,15 +63,15 @@ TOLERANCIA_HOMING_DEG = 1.5
 # --- Apuntado ---------------------------------------------------------------
 # Angulo del MUNDO (0..180, el que devuelve geometria.py) al que apunta el
 # motor cuando esta en su cero.
-MOTOR_ANGULO_MUNDO_EN_CERO = 90.0
+MOTOR_ANGULO_MUNDO_EN_CERO = 0.0
 
 # +1 si aumentar el angulo del mundo requiere grados de motor positivos.
 MOTOR_SENTIDO = +1
 
 # Limites mecanicos en grados de motor respecto del cero. Todo comando se
 # clampea contra esto ANTES de mandarlo.
-MOTOR_GRADOS_MIN = -95.0
-MOTOR_GRADOS_MAX = +95.0
+MOTOR_GRADOS_MIN = -10.0
+MOTOR_GRADOS_MAX = +190.0
 
 MOTOR_TIMEOUT_MOV_S = 12.0
 

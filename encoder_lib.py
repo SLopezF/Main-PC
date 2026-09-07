@@ -87,7 +87,7 @@ AGC_AVISO_CAMPO_ALTO = 35
 
 # Config que se escribe. Cambiala solo si sabes por que.
 CONFIG = {
-    "direction_reverse": False,
+    "direction_reverse": True,
     "interface": "ABI",
     "abi_binary": True,
     "abi_ppr": 512,   # maximo del AS5047D en binario
