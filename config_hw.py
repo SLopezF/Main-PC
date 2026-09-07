@@ -42,12 +42,12 @@ MOTOR_VELOCIDAD = 2000             # pasos/s
 MOTOR_ACELERACION = 4000           # pasos/s^2
 
 # --- Homing -----------------------------------------------------------------
-# Dato medido: con el motor en su cero mecanico, el encoder absoluto marca
-# 79 grados. Al arrancar se lee X y se corrige la diferencia.
+# Dato MEDIDO: con el motor en su cero mecanico, el encoder absoluto marca
+# 89 grados. Al arrancar se lee X y se corrige la diferencia.
 ENCODER_GRADOS_EN_MOTOR_CERO = 89.0
 
 # El motor esta corrido (X - 89) grados. Para volver al home hay que moverlo
-# -(X - 79). Si al probarlo se va para el lado contrario, poné +1 aca en vez
+# -(X - 89). Si al probarlo se va para el lado contrario, poné +1 aca en vez
 # de tocar la formula.
 HOMING_SENTIDO = -1
 
@@ -62,14 +62,17 @@ TOLERANCIA_HOMING_DEG = 1.5
 
 # --- Apuntado ---------------------------------------------------------------
 # Angulo del MUNDO (0..180, el que devuelve geometria.py) al que apunta el
-# motor cuando esta en su cero.
+# motor cuando esta en su cero. Con 0.0 los grados de motor y el angulo del
+# mundo son el MISMO numero, que es lo que simplifica todo el resto.
 MOTOR_ANGULO_MUNDO_EN_CERO = 0.0
 
 # +1 si aumentar el angulo del mundo requiere grados de motor positivos.
 MOTOR_SENTIDO = +1
 
-# Limites mecanicos en grados de motor respecto del cero. Todo comando se
-# clampea contra esto ANTES de mandarlo.
+# Limites en grados de MOTOR respecto de su cero. Todo comando se clampea
+# contra esto ANTES de mandarlo. No son topes mecanicos (el eje gira 360
+# libre): son el recorrido UTIL, los 0..180 de los sectores con 10 grados de
+# margen a cada lado.
 MOTOR_GRADOS_MIN = -10.0
 MOTOR_GRADOS_MAX = +190.0
 
@@ -237,11 +240,11 @@ MS_MINIMO_ENTRE_CAMBIOS = 1000.0
 # ven, y con la camara a ~2 m del fondo hacen falta: una jugada contra el
 # lateral cae ahi.
 #
-# El recorrido mecanico alcanza: MOTOR_GRADOS_MIN/MAX son -95/+95 respecto de
-# un cero que mira a 90 grados, o sea -5..185 del mundo. Los centros extremos
-# (10 y 170) quedan holgados; si en el fierro real el motor no llega, se ve en
-# la columna 'clampeado' de geometria.angulo_a_grados_motor y hay que
-# corregir los limites, no los sectores.
+# El recorrido alcanza: con MOTOR_ANGULO_MUNDO_EN_CERO = 0 los grados de motor
+# son el angulo del mundo, y MOTOR_GRADOS_MIN/MAX = -10/+190 cubren los 0..180
+# con 10 grados de margen. Si en el fierro el motor no llega, se ve en la
+# columna 'clampeado' de geometria.angulo_a_grados_motor: hay que corregir los
+# limites, no los sectores.
 SECTOR_DESDE = 0.0
 SECTOR_HASTA = 180.0
 N_SECTORES = 9
@@ -255,35 +258,35 @@ N_SECTORES = 9
 # el motor se ve nervioso, subir.
 HISTERESIS_SECTOR_DEG = 5.0
 
-# Ademas del margen, la condicion puede exigirse SOSTENIDA este tiempo.
+# Permanencia, en FRAMES (no en milisegundos). Cuantos frames seguidos tiene
+# que votar al mismo sector antes de mover.
 #
-# 0 = DESACTIVADA. Es el valor actual, y es una prueba deliberada: la espera
-# es contraproducente justo en el caso que mas importa, el pelotazo. La
-# excepcion por OMEGA_RAPIDA lo cubria solo si la velocidad angular estimada
-# superaba el umbral, y esa estimacion es ruidosa; con la permanencia en 0 el
-# sector cambia apenas se supera el margen, siempre.
+# 2 es practicamente "reaccionar ya" (50 ms a 40 fps) pero mata el caso de un
+# unico frame con una deteccion espuria que cruzo el margen.
 #
-# Queda MS_MINIMO_ENTRE_MOVIMIENTOS como unico freno temporal, que es un piso
-# duro y no una espera antes de reaccionar: el primer movimiento sale
-# inmediato y lo que se limita es la FRECUENCIA de los siguientes.
+# POR QUE EN FRAMES Y NO EN MS. La version anterior exigia 600 ms sostenidos y
+# tenia una excepcion por velocidad angular (OMEGA_RAPIDA) para no perderse un
+# pelotazo. Se saco todo: esa excepcion dependia de una estimacion de omega
+# que es ruidosa (una derivada numerica sobre una posicion ruidosa), asi que
+# el caso que mas importa quedaba a merced del ruido.
 #
-# Si al mirar el video de cancha el motor se ve nervioso, la primera opcion es
-# subir HISTERESIS_SECTOR_DEG (mas margen, misma reaccion) y solo despues
-# volver a poner permanencia aca. El briefing proponia 600 ms de arranque.
-MS_PERMANENCIA = 0.0
+# Lo que reemplaza a todo eso ya existia aguas arriba: el gate de
+# plausibilidad y el Kalman filtran las detecciones malas ANTES de que lleguen
+# al sectorizador. Lo unico que hace falta despues es el margen en grados.
+#
+# Si al mirar el video de cancha el motor se ve nervioso, subir primero
+# HISTERESIS_SECTOR_DEG (mas margen, misma reaccion) y solo despues esto.
+FRAMES_PERMANENCIA = 2
 
-# Piso duro entre movimientos del motor, pase lo que pase. Con la permanencia
-# en 0 este es el unico freno temporal, asi que hace todo el trabajo de evitar
-# que el motor se la pase moviendo.
+# Piso duro entre movimientos del motor, pase lo que pase. Limita la
+# FRECUENCIA sin retrasar la primera reaccion: el primer movimiento sale
+# inmediato.
 MS_MINIMO_ENTRE_MOVIMIENTOS = 800.0
 
-# --- Excepcion por regimen ---------------------------------------------------
-# Si la velocidad angular supera esto, se saltea la PERMANENCIA y se mueve ya.
-# Un pelotazo cruza un sector de 20 grados en unos 100 ms: esperar 600 ms lo
-# perderia. La histeresis en grados se sigue exigiendo igual.
-#
-# En grados por segundo. Se ajusta mirando la columna omega del CSV: ahi se ve
-# el corte real entre jugada trabada y pelotazo.
+# --- Regimen rapido/lento: SACADO -------------------------------------------
+# OMEGA_RAPIDA y OMEGA_LENTA ya NO las usa nadie para decidir. Quedan porque
+# la columna omega del CSV se sigue escribiendo y es util para el analisis de
+# la tesis, pero no controlan nada.
 OMEGA_RAPIDA = 28.0
 OMEGA_LENTA = 13.0
 

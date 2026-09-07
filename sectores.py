@@ -14,21 +14,29 @@ una camara que persigue el angulo exacto marea y se ve amateur.
     bordes  = [20, 40, 60, 80, 100, 120, 140, 160]
     centros = [30, 50, 70, 90, 110, 130, 150]
 
-TRES FRENOS, Y POR QUE HACEN FALTA LOS TRES
+LOS FRENOS
   1. MARGEN (histeresis). Para pasar del sector i al i+1 hay que superar el
-     borde por HISTERESIS_SECTOR_DEG. Solo con esto no alcanza: el ruido de
-     la deteccion hace que la pelota "salte" varios grados entre frames y
-     puede superar el margen sola.
-  2. PERMANENCIA. La condicion tiene que sostenerse MS_PERMANENCIA. Sola
-     tampoco alcanza: una pelota que se queda justo sobre el limite la cumple
-     todo el tiempo.
-  3. PISO DE TIEMPO entre movimientos, pase lo que pase.
+     borde por HISTERESIS_SECTOR_DEG. Es el freno principal: sin el, una
+     pelota parada sobre un limite hace saltar el motor de ida y vuelta.
+  2. PERMANENCIA de FRAMES_PERMANENCIA frames (arranque: 2). Practicamente
+     "reaccionar ya" —50 ms a 40 fps— pero mata el caso de un unico frame con
+     una deteccion espuria que cruzo el margen.
+  3. PISO DE TIEMPO entre movimientos, que limita la FRECUENCIA sin retrasar
+     la primera reaccion.
 
-LA EXCEPCION POR REGIMEN
-Si |omega| supera OMEGA_RAPIDA se saltea la PERMANENCIA y se mueve ya: un
-pelotazo cruza un sector de 20 grados en unos 100 ms, y esperar 600 ms lo
-perderia. El margen en grados se sigue exigiendo igual, porque es lo que
-protege del ruido, y el ruido no desaparece porque la pelota vaya rapido.
+QUE SE SACO, Y POR QUE
+Habia una permanencia de 600 ms y una excepcion por velocidad angular
+(OMEGA_RAPIDA) para no perderse un pelotazo. Los dos se sacaron.
+
+La espera de 600 ms era contraproducente justo en el caso que mas importa, y
+la excepcion que la cubria dependia de una estimacion de omega que es ruidosa:
+una derivada numerica sobre una posicion ruidosa. O sea que el pelotazo, el
+caso critico, quedaba a merced del ruido de la deteccion.
+
+Lo que reemplaza a todo eso ya existia aguas arriba: el gate de plausibilidad
+y el Kalman del tracker filtran las detecciones malas ANTES de que lleguen
+aca. Lo unico que hace falta despues es el margen en grados y dos frames de
+confirmacion.
 
 SIN HARDWARE
 Python puro: no sabe de motores, camaras ni pixeles. Entra (angulo, omega, t)
@@ -97,7 +105,7 @@ class Sectorizador:
         self.motivo = "inicial"
 
         self._voto_a = None          # a que sector se esta votando
-        self._t_voto = None          # desde cuando
+        self._votos = 0              # cuantos frames seguidos lleva ese voto
         self._t_ultimo_cambio = -1e9
 
     # -------------------------------------------------------------- internos
@@ -121,7 +129,7 @@ class Sectorizador:
         self.sector = int(sector)
         self.angulo_objetivo = centros()[self.sector]
         self._t_ultimo_cambio = t_s
-        self._voto_a, self._t_voto = None, None
+        self._voto_a, self._votos = None, 0
         self.motivo = motivo
         return ResultadoSector(self.sector, True, self.angulo_objetivo, motivo)
 
@@ -130,46 +138,38 @@ class Sectorizador:
         return ResultadoSector(self.sector, False, self.angulo_objetivo, motivo)
 
     # --------------------------------------------------------- actualizacion
-    def actualizar(self, angulo: float, omega: float,
-                   t_s: float) -> ResultadoSector:
+    def actualizar(self, angulo: float, omega: float = 0.0,
+                   t_s: float = 0.0) -> ResultadoSector:
         """
-        `angulo` en grados del mundo (0..180), `omega` en grados por segundo
-        (el signo no importa, se usa el modulo), `t_s` en segundos.
+        `angulo` en grados del mundo, `t_s` en segundos.
+
+        `omega` YA NO SE USA para decidir: queda en la firma porque el CSV la
+        sigue escribiendo (es util para el analisis) y para no romper a quien
+        llame con tres argumentos.
         """
         candidato = self._candidato(angulo)
 
         if candidato == self.sector:
-            self._voto_a, self._t_voto = None, None
+            self._voto_a, self._votos = None, 0
             return self._quedarse("centrado")
 
-        # --- regimen rapido: se saltea la permanencia, no el margen
-        if abs(omega) >= float(chw.OMEGA_RAPIDA):
-            if not self._puede_mover(t_s):
-                return self._quedarse("rapido, pero movimiento reciente")
-            return self._mover_a(candidato, t_s, f"rapido ({omega:.0f} deg/s)")
-
-        # --- permanencia: hay que sostener el voto al MISMO sector.
-        # Con MS_PERMANENCIA = 0 no se exige nada y se cambia apenas se supera
-        # el margen. Ver el comentario en config_hw: la espera es
-        # contraproducente justo en el pelotazo, que es el caso que importa.
-        if float(chw.MS_PERMANENCIA) <= 0.0:
-            if not self._puede_mover(t_s):
-                return self._quedarse("movimiento reciente, se espera")
-            return self._mover_a(candidato, t_s, "margen superado")
-
+        # --- permanencia en FRAMES: hay que votar al MISMO sector
         if self._voto_a != candidato:
-            self._voto_a, self._t_voto = candidato, t_s
-            return self._quedarse(f"votando sector {candidato}")
+            self._voto_a, self._votos = candidato, 1
+        else:
+            self._votos += 1
 
-        sostenido_ms = (t_s - self._t_voto) * 1000.0
-        if sostenido_ms < float(chw.MS_PERMANENCIA):
+        faltan = int(chw.FRAMES_PERMANENCIA) - self._votos
+        if faltan > 0:
             return self._quedarse(
-                f"votando sector {candidato} ({sostenido_ms:.0f} ms)")
+                f"votando sector {candidato} ({self._votos}/"
+                f"{chw.FRAMES_PERMANENCIA})")
 
         if not self._puede_mover(t_s):
             return self._quedarse("movimiento reciente, se espera")
 
-        return self._mover_a(candidato, t_s, f"sostenido {sostenido_ms:.0f} ms")
+        return self._mover_a(candidato, t_s,
+                             f"margen superado ({self._votos} frames)")
 
     def forzar(self, angulo: float, t_s: float) -> ResultadoSector:
         """
@@ -231,12 +231,10 @@ def main() -> int:
     print(f"centros  {[f'{v:.0f}' for v in c]}")
     print()
     print(f"histeresis            {h:.1f} grados")
-    print(f"permanencia           {chw.MS_PERMANENCIA:.0f} ms")
+    print(f"permanencia           {chw.FRAMES_PERMANENCIA} frames "
+          f"({chw.FRAMES_PERMANENCIA / 40.0 * 1000:.0f} ms a 40 fps)")
     print(f"minimo entre movs     {chw.MS_MINIMO_ENTRE_MOVIMIENTOS:.0f} ms")
-    print(f"omega rapida          {chw.OMEGA_RAPIDA:.0f} deg/s "
-          f"(saltea la permanencia)")
-    if chw.MS_PERMANENCIA <= 0:
-        print("permanencia DESACTIVADA: cambia apenas se supera el margen")
+    print("regimen rapido/lento  SACADO (dependia de una omega ruidosa)")
     print()
 
     import geometria

@@ -64,6 +64,9 @@ import geometria
 import postprocess
 import preproceso
 from inferencia import abrir as abrir_inferencia
+import pipeline
+from pipeline import COLUMNAS, procesar_frame
+from sectores import Sectorizador
 from tracker import Mode, Tracker
 
 # Todas las salidas van a una sola carpeta, que .gitignore ignora entera. Sin
@@ -74,24 +77,6 @@ DIR_SALIDAS = "salidas"
 # pred_x / pred_y / err_pred son el residuo del Kalman: la distancia entre lo
 # que el filtro predijo ANTES de ver el frame y donde aparecio la deteccion.
 # Es la señal con la que se tunean KALMAN_SIGMA_ACEL y KALMAN_SIGMA_MEDICION.
-class _Cand:
-    """
-    Candidato en pixeles del frame NATIVO. El tracker solo pide .x .y .w .h y
-    .confidence; se guarda .original para poder dibujar la caja despues, que
-    sigue en coordenadas del tensor.
-    """
-    __slots__ = ("x", "y", "w", "h", "confidence", "original")
-
-    def __init__(self, x, y, w, h, confidence, original):
-        self.x, self.y, self.w, self.h = x, y, w, h
-        self.confidence, self.original = confidence, original
-
-
-COLUMNAS = ["n", "ts", "modo", "camara", "tile", "conf", "x", "y", "w", "h",
-            "angulo", "sector", "flost", "aceptado_por",
-            "pred_x", "pred_y", "err_pred", "vx", "vy", "motivo", "dist_ult"]
-
-
 # =============================================================================
 # Fuente de video
 # =============================================================================
@@ -178,85 +163,6 @@ def abrir_fuente_replay(video: str | None, carpeta: str | None,
                                 bucle=False, reloj="sintetico")
 
 
-# =============================================================================
-# Procesamiento de un frame
-# =============================================================================
-
-def procesar_frame(frame, info, hailo, model_hw, tr):
-    """
-    Un frame de punta a punta: arma el tensor segun el modo que pide el
-    tracker, infiere, decodifica los candidatos y deja que el tracker decida.
-
-    Esta funcion es la que despues comparte main_final.py.
-
-    Se llama process_candidates() y no process(): el tracker necesita VARIOS
-    candidatos para poder elegir el mas cercano a la prediccion cuando la
-    confianza es baja. Con uno solo, esa mitad del algoritmo no existe.
-    """
-    t0 = time.perf_counter()
-
-    _, tile = tr.siguiente_entrada()
-
-    if tr.modo == Mode.SEARCH:
-        tensor, to_global = preproceso.build_search_input(
-            frame, model_hw, tile)
-    else:
-        tensor, to_global = preproceso.build_track_input(
-            frame, tr.crop_center(), model_hw)
-
-    crudos = postprocess.process_candidates(
-        hailo.infer(tensor), model_hw,
-        umbral=getattr(config, "CONF_CANDIDATO", 0.05), topk=8)
-
-    # Los candidatos llegan en coordenadas del TENSOR; el tracker trabaja en
-    # pixeles del frame nativo. Se remapean antes de entregarlos.
-    candidatos = []
-    for d in crudos:
-        gx, gy = to_global(d.x, d.y)
-        candidatos.append(_Cand(gx, gy, d.w, d.h, d.confidence, d))
-
-    r = tr.actualizar(candidatos, info["ts_ns"], info.get("camara", 0))
-    ms = (time.perf_counter() - t0) * 1000.0
-
-    ancho = frame.shape[1]
-    angulo = (geometria.pixel_a_angulo(r.x, ancho, r.camara)
-              if r.x is not None else None)
-
-    det_dibujo = None
-    if r.aceptado:
-        for c in candidatos:
-            if c.x == r.x and c.y == r.y:
-                det_dibujo = c.original
-                break
-
-    fila = {
-        "n": info["seq"] - 1,
-        "ts": info["ts_ns"] / 1e9,
-        "modo": r.modo.name,
-        "camara": r.camara,
-        "tile": r.tile,
-        "conf": f"{r.conf:.4f}" if r.conf is not None else "",
-        "x": f"{r.x:.1f}" if r.x is not None else "",
-        "y": f"{r.y:.1f}" if r.y is not None else "",
-        "w": f"{r.w:.1f}" if r.w is not None else "",
-        "h": f"{r.h:.1f}" if r.h is not None else "",
-        "angulo": f"{angulo:.2f}" if angulo is not None else "",
-        "sector": "",
-        "flost": r.flost,
-        "aceptado_por": r.motivo if r.aceptado else "",
-        "pred_x": f"{r.pred_x:.1f}" if r.pred_x is not None else "",
-        "pred_y": f"{r.pred_y:.1f}" if r.pred_y is not None else "",
-        "err_pred": f"{r.err_pred:.1f}" if r.err_pred is not None else "",
-        "vx": f"{r.vx:.0f}" if r.vx is not None else "",
-        "vy": f"{r.vy:.0f}" if r.vy is not None else "",
-        # motivo se llena SIEMPRE, tambien cuando se rechaza: sin esto no se
-        # puede distinguir "el modelo no vio nada" de "el gate lo rechazo".
-        "motivo": r.motivo,
-        "dist_ult": f"{r.dist_ult:.1f}" if r.dist_ult is not None else "",
-    }
-    return fila, det_dibujo, to_global, r.modo, ms
-
-
 def procesar_frame_solo_search(frame, info, hailo, model_hw):
     """
     Barre los CUATRO cuadrantes de la imagen y se queda con el mejor
@@ -315,7 +221,7 @@ def procesar_frame_solo_search(frame, info, hailo, model_hw):
         "aceptado_por": "confianza" if deteccion is not None else "",
         "pred_x": "", "pred_y": "", "err_pred": "", "vx": "", "vy": "",
         "motivo": "confianza" if deteccion is not None else "sin candidato",
-        "dist_ult": "",
+        "dist_ult": "", "omega": "", "objetivo_motor": "", "cambio_sector": "",
     }
     return fila, deteccion, to_global, Mode.SEARCH, ms
 
@@ -413,7 +319,7 @@ def _percentil(valores, p):
 
 
 def resumir(filas, latencias, transiciones, t_corrida, solo_search=False,
-            etiqueta=None, variante=None):
+            etiqueta=None, variante=None, cambios_sector=0):
     n = len(filas)
     con_det = sum(1 for f in filas if f["aceptado_por"])
     en_track = sum(1 for f in filas if f["modo"] == "TRACK")
@@ -462,7 +368,7 @@ def resumir(filas, latencias, transiciones, t_corrida, solo_search=False,
         "",
         f"transiciones SEARCH->TRACK   {transiciones['a_track']}",
         f"transiciones TRACK->SEARCH   {transiciones['a_search']}",
-        f"cambios de sector            -   (P4)",
+        f"cambios de sector            {cambios_sector}",
         ]
 
     if confs:
@@ -548,6 +454,8 @@ def correr(video=None, carpeta=None, camara=0, fps=None, limite=None,
     tr = None            # se crea con el primer frame, que da el tamano
     filas, latencias = [], []
     transiciones = {"a_track": 0, "a_search": 0}
+    cambios_sector = 0
+    sect = omega_calc = None
     escritor_mp4 = None
     archivo_csv = None
     escritor_csv = None
@@ -589,6 +497,8 @@ def correr(video=None, carpeta=None, camara=0, fps=None, limite=None,
                     fn_tile=lambda x, y: preproceso.tile_para_punto(
                         (h, w), model_hw, x, y),
                 )
+                sect = Sectorizador()
+                omega_calc = pipeline.CalculadorOmega()
                 primero = False
 
             if solo_search:
@@ -597,8 +507,10 @@ def correr(video=None, carpeta=None, camara=0, fps=None, limite=None,
                     frame, info, hailo, model_hw)
             else:
                 modo_previo = tr.modo
-                fila, det, to_global, _, ms = procesar_frame(
-                    frame, info, hailo, model_hw, tr)
+                fila, det, to_global, _r, _rs, ms = procesar_frame(
+                    frame, info, hailo, model_hw, tr, sect, omega_calc)
+                if _rs is not None and _rs.cambio:
+                    cambios_sector += 1
 
             # El tile rota solo si ESTE frame fue de SEARCH. En P2 se barre un
             # cuadrante por frame, igual que hacia main.py: es la linea de
@@ -653,7 +565,8 @@ def correr(video=None, carpeta=None, camara=0, fps=None, limite=None,
         n for n, off in (("kalman", sin_kalman), ("gate", sin_gate)) if off
     ) if (sin_kalman or sin_gate) else "completo"
     print(resumir(filas, latencias, transiciones, t_corrida, solo_search,
-                  etiqueta=carpeta or video, variante=variante))
+                  etiqueta=carpeta or video, variante=variante,
+                  cambios_sector=cambios_sector))
     if salida_csv:
         print(f"csv -> {os.path.abspath(salida_csv)}")
     if salida_mp4:
