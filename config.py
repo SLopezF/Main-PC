@@ -7,7 +7,11 @@ sobre Raspberry Pi 5 + Hailo-8.
 Todas las constantes ajustables del proyecto viven acá para no tener
 que buscarlas dispersas en el resto de los módulos.
 """
-
+# Presupuesto de tiempo de un frame de TRACK: preprocesado + inferencia +
+# decode. Sale de CAM_FPS = 40 -> 1000/40 = 25 ms. Si bench.py mide un p95
+# por encima de esto, el que se ajusta es CAM_FPS, no este numero.
+PRESUPUESTO_TRACK_MS = 25.0
+MAX_PERDIDOS_PCT = 2.0
 # =============================================================================
 # ENTRADA: CÁMARA EN VIVO
 # =============================================================================

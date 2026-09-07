@@ -650,3 +650,37 @@ conversion a grados por segundo del mundo la hace quien llama, con
 `geometria.pixel_a_angulo` sobre dos posiciones consecutivas. Hasta P8 los
 angulos salen de `CAM_CENTRO_ANGULO` inventado, asi que la columna `sector`
 del CSV no va a significar nada real hasta calibrar.
+
+## P0 — presupuesto de tiempo (2026-09-07 15:36)
+
+- hef: `yolo26n_sincalib_opt1.hef`
+- fuente: `carpeta imagenes/cam0`  (300 frames medidos, 10 de calentamiento descartados)
+- entrada del modelo: 300 muestras por etapa
+
+| etapa | p50 (ms) | p95 (ms) |
+|---|---|---|
+| pre_track | 1.04 | 3.87 |
+| infer_track | 15.86 | 16.06 |
+| post_track | 0.23 | 0.26 |
+| pre_search | 4.85 | 6.94 |
+| infer_search | 15.70 | 15.97 |
+| post_search | 0.18 | 0.24 |
+| total_track | 17.14 | 19.95 |
+| total_search | 83.02 | 92.88 |
+
+**Resultado:** TRACK p95 = 19.95 ms contra un presupuesto de 25.0 ms -> CUMPLE. Techo sostenible 50.1 fps.
+
+## P1 — dos cámaras simultáneas (2026-09-07 16:02)
+
+- pedido: 2304x1296 @ 40 fps
+
+| pasada | fps (timestamps) | dt p50 | dt p95 | perdidos | pisados |
+|---|---|---|---|---|---|
+| cam0 sola | 40.01 | 24.99 | 25.00 | 0 (0.00%) | 0 |
+| cam1 sola | 40.01 | 24.99 | 25.00 | 0 (0.00%) | 0 |
+| cam0 + cam1 -> cam0 | 40.01 | 24.99 | 24.99 | 0 (0.00%) | 1825 |
+| cam0 + cam1 -> cam1 | 40.01 | 24.99 | 25.00 | 0 (0.00%) | 1744 |
+
+**Resultado:** CUMPLE el criterio de menos de 2% de frames perdidos.
+
+**Orden de canales (4.1):** cam0 entrega `BGR`, cam1 entrega `BGR`. Verificado con `verificar_canales()` contra un objeto rojo.

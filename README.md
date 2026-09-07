@@ -115,6 +115,82 @@ solo script para los dos.
 
 ---
 
+## Mediciones de base (solo en la Pi)
+
+Las dos contestan preguntas que el resto del diseno da por sentadas. Se corren
+una vez, se anotan los numeros en `ESTADO.md` y no se vuelven a tocar salvo que
+cambie el `.hef` o el modo de la camara.
+
+### bench.py — presupuesto de tiempo por etapa (P0)
+
+Cuanto cuesta cada parte de un frame, con el `.hef` custom y sobre la Pi. Sin
+esto, los 40 fps son una suposicion.
+
+```
+python bench.py --n 300 --json bench_p0.json          # usa config.VIDEO_PATH
+python bench.py --imagenes imagenes/cam0 --n 300
+python bench.py --sintetico --n 200                   # sin material a mano
+```
+
+Mide p50 y p95 de: preprocesado de TRACK, preprocesado de SEARCH, `infer()`
+sola y `process_candidates()`. Los totales se suman **por frame** y se
+percentilan despues; sumar los p95 de cada etapa daria un techo que no ocurre
+en ningun frame real.
+
+Con `--imagenes` carga la carpeta entera a RAM antes de medir, a proposito: el
+`imread` no tiene que entrar en el cronometro. 300 frames de 2304x1296 son
+~2.5 GB, asi que con carpetas grandes conviene bajar `--n` y dejar que ciclen.
+
+`--sintetico` sirve para el preprocesado y la NPU, no para el decode: sin nada
+que detectar, `process_candidates()` no recorre candidatos y sale optimista.
+
+**Criterio:** total de TRACK por debajo de `config.PRESUPUESTO_TRACK_MS` en
+p95. Si falla, el que se ajusta es `CAM_FPS`, no el resto del sistema.
+
+### prueba_dos_camaras.py — las dos camaras a la vez (P1)
+
+Si el CSI aguanta los dos IMX708 abiertos a `CAM_ANCHO x CAM_ALTO` y `CAM_FPS`.
+De esto depende el patron de SEARCH que alterna camaras: si hay que tener
+abierta solo la activa, cada cambio paga un stop/start de Picamera2 y el patron
+de `tracker.py` deja de ser viable.
+
+```
+python prueba_dos_camaras.py --n 400
+python prueba_dos_camaras.py --n 400 --canales    # pide un objeto rojo
+python prueba_dos_camaras.py --n 400 --sin-control
+```
+
+Hace **tres pasadas**: cam0 sola, cam1 sola, y las dos leyendo alternado. Los
+controles no son relleno: si la pasada de a dos pierde frames, sin la linea de
+base no se sabe si es por la simultaneidad o si esa camara ya perdia sola, y
+las dos cosas llevan a decisiones opuestas.
+
+No escribe imagenes a disco. Los frames viven en RAM y se descartan; lo unico
+que toca la SD es el append a `ESTADO.md`.
+
+**`perdidos` y `pisados` no son lo mismo.** `perdidos` es la camara entregando
+menos de lo pedido (ancho de banda o modo de sensor). `pisados` es el hilo de
+captura sobreescribiendo un frame sin consumir (el consumidor va lento). Como
+aca no hay inferencia, `pisados` alto senala la lectura alternada en si.
+
+**Criterio:** menos de `config.MAX_PERDIDOS_PCT` de frames perdidos en cada
+camara, y el orden de canales anotado en `ESTADO.md`.
+
+### --canales y el factor 8
+
+`verificar_canales()` decide empiricamente si el array sale en RGB o en BGR, en
+vez de confiar en el nombre del formato: Picamera2 con `"RGB888"` suele
+entregar BGR, porque el nombre viene del empaquetado de bytes. El modelo rinde
+0.879 contra 0.859 en recorte nativo y 0.476 contra 0.061 en frame reducido, o
+sea un factor 8 en el caso peor, y es invisible a ojo.
+
+El resultado se compara contra `config.FUENTE_ENTREGA_BGR` y el script dice si
+hay que darlo vuelta. Si cam0 y cam1 dan resultados distintos, la corrida no
+vale: las dos usan el mismo formato, asi que o el objeto rojo no llenaba las
+dos vistas o hay algo mal configurado.
+
+---
+
 ## Tests
 
 ```
@@ -156,7 +232,11 @@ python motor_lib.py                     # terminal interactiva
 python encoder_lib.py                   # config y monitor del encoder
 python gopro_lib.py --estado
 python camera_source.py --n 300 --modos # banco de captura
+python bench.py --n 300                 # presupuesto de tiempo (P0)
+python prueba_dos_camaras.py --n 400    # dos camaras simultaneas (P1)
 ```
+
+Las dos ultimas estan explicadas arriba, en **Mediciones de base**.
 
 **`encoder_lib.py` interactivo expone `poner_cero_aca()`, que reescribe el
 registro ZPOS del chip y invalida `ENCODER_GRADOS_EN_MOTOR_CERO = 79.0`.** Con
@@ -178,8 +258,9 @@ BACKEND=ultralytics FUENTE=carpeta python replay.py --carpeta imagenes/Soleado
 ```
 
 **Las latencias medidas en la PC no significan nada** para el presupuesto de
-25 ms de P0: Ultralytics en CPU esta uno o dos ordenes de magnitud por encima
-de la Hailo. Ese numero se mide en la Pi con el `.hef`.
+25 ms: Ultralytics en CPU esta uno o dos ordenes de magnitud por encima de la
+Hailo. Ese numero sale de `bench.py` en la Pi con el `.hef`, y esta en
+`ESTADO.md`.
 
 ---
 

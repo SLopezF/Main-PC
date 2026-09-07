@@ -1,0 +1,49 @@
+{
+  "fuente": "carpeta imagenes/cam0",
+  "hef": "yolo26n_sincalib_opt1.hef",
+  "n": 300,
+  "resumen": {
+    "pre_track": {
+      "p50_ms": 1.043,
+      "p95_ms": 3.872,
+      "n": 300
+    },
+    "infer_track": {
+      "p50_ms": 15.856,
+      "p95_ms": 16.059,
+      "n": 300
+    },
+    "post_track": {
+      "p50_ms": 0.226,
+      "p95_ms": 0.256,
+      "n": 300
+    },
+    "pre_search": {
+      "p50_ms": 4.849,
+      "p95_ms": 6.937,
+      "n": 300
+    },
+    "infer_search": {
+      "p50_ms": 15.7,
+      "p95_ms": 15.971,
+      "n": 300
+    },
+    "post_search": {
+      "p50_ms": 0.18,
+      "p95_ms": 0.238,
+      "n": 300
+    },
+    "total_track": {
+      "p50_ms": 17.139,
+      "p95_ms": 19.946
+    },
+    "total_search": {
+      "p50_ms": 83.024,
+      "p95_ms": 92.875,
+      "cuadrantes": 4
+    },
+    "fps_track_p95": 50.13,
+    "presupuesto_track_ms": 25.0,
+    "cumple": true
+  }
+}
