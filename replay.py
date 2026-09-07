@@ -324,12 +324,15 @@ def procesar_frame_solo_search(frame, info, hailo, model_hw):
 # Anotado
 # =============================================================================
 
-def anotar(frame, fila, deteccion, to_global, escala):
+def anotar(frame, fila, deteccion, to_global, escala, lineas_sectores=False):
     """Copia reducida del frame con la caja, el modo y el tile."""
     import cv2
 
     vis = cv2.resize(frame, None, fx=escala, fy=escala,
                      interpolation=cv2.INTER_AREA)
+
+    if lineas_sectores:
+        _dibujar_sectores(vis, frame.shape[1], escala, int(fila["camara"]))
 
     verde, rojo, blanco = (0, 255, 0), (0, 0, 255), (255, 255, 255)
     color = verde if fila["modo"] == "TRACK" else blanco
@@ -356,6 +359,43 @@ def anotar(frame, fila, deteccion, to_global, escala):
     cv2.putText(vis, f"#{fila['n']}", (8, vis.shape[0] - 8),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, blanco, 1, cv2.LINE_AA)
     return vis
+
+
+def _dibujar_sectores(vis, ancho_nativo, escala, camara):
+    """
+    Divisiones de sector sobre la imagen, para ver a ojo si el modelo de lente
+    esta cerca antes de calibrar nada.
+
+    OJO: hasta P8 esto usa CAM_FOV y CAM_CENTRO_ANGULO, que son ESTIMADOS. Las
+    lineas son una hipotesis, no una verdad: sirven justamente para
+    contrastarlas contra la cancha y ver cuanto hay que corregir.
+    """
+    import cv2
+
+    import sectores as S
+
+    alto_vis = vis.shape[0]
+    amarillo, cian = (0, 220, 220), (220, 220, 0)
+
+    for angulo, px in S.bordes_en_pixeles(camara, ancho_nativo):
+        x = int(px * escala)
+        cv2.line(vis, (x, 0), (x, alto_vis), amarillo, 1, cv2.LINE_AA)
+        cv2.putText(vis, f"{angulo:.0f}", (x + 3, alto_vis - 24),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, amarillo, 1, cv2.LINE_AA)
+
+    # El centro de cada sector visible: es ADONDE va el motor, no donde esta
+    # la pelota. Verlo dibujado explica el comportamiento del sistema mejor
+    # que cualquier numero del CSV.
+    import geometria
+    for i in S.sectores_visibles(camara):
+        c = S.centros()[i]
+        px = geometria.angulo_a_pixel(c, ancho_nativo, camara)
+        if not (0 <= px <= ancho_nativo):
+            continue
+        x = int(px * escala)
+        cv2.line(vis, (x, alto_vis - 18), (x, alto_vis), cian, 2, cv2.LINE_AA)
+        cv2.putText(vis, f"S{i}", (x - 8, alto_vis - 22),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, cian, 1, cv2.LINE_AA)
 
 
 # =============================================================================
@@ -490,7 +530,7 @@ def correr(video=None, carpeta=None, camara=0, fps=None, limite=None,
            salida_csv=DIR_SALIDAS + "/replay.csv",
            salida_mp4=DIR_SALIDAS + "/replay.mp4",
            escala=None, modelo=None, solo_search=False,
-           sin_kalman=False, sin_gate=False):
+           sin_kalman=False, sin_gate=False, lineas_sectores=False):
     escala = escala if escala is not None else getattr(
         config, "DEBUG_VIDEO_SCALE", 0.5)
 
@@ -577,7 +617,8 @@ def correr(video=None, carpeta=None, camara=0, fps=None, limite=None,
 
             if salida_mp4:
                 import cv2
-                vis = anotar(frame, fila, det, to_global, escala)
+                vis = anotar(frame, fila, det, to_global, escala,
+                             lineas_sectores)
                 if escritor_mp4 is None:
                     vh, vw = vis.shape[:2]
                     escritor_mp4 = cv2.VideoWriter(
@@ -640,6 +681,11 @@ def main() -> int:
     ap.add_argument("--sin-mp4", action="store_true")
     ap.add_argument("--sin-csv", action="store_true")
     ap.add_argument("--escala", type=float, default=None)
+    ap.add_argument("--lineas-sectores", action="store_true",
+                    help="dibujar en el mp4 las divisiones de sector y el "
+                         "centro de cada uno, para la camara indicada con "
+                         "--camara. Usa el FOV nominal, que hasta P8 es "
+                         "estimado.")
     ap.add_argument("--sin-kalman", action="store_true",
                     help="no usar la prediccion para elegir candidatos; se "
                          "toma el mas confiado. Para comparar A/B.")
@@ -666,6 +712,7 @@ def main() -> int:
         solo_search=args.solo_search,
         sin_kalman=args.sin_kalman,
         sin_gate=args.sin_gate,
+        lineas_sectores=args.lineas_sectores,
     )
     return 0
 

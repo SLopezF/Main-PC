@@ -148,7 +148,15 @@ class Sectorizador:
                 return self._quedarse("rapido, pero movimiento reciente")
             return self._mover_a(candidato, t_s, f"rapido ({omega:.0f} deg/s)")
 
-        # --- permanencia: hay que sostener el voto al MISMO sector
+        # --- permanencia: hay que sostener el voto al MISMO sector.
+        # Con MS_PERMANENCIA = 0 no se exige nada y se cambia apenas se supera
+        # el margen. Ver el comentario en config_hw: la espera es
+        # contraproducente justo en el pelotazo, que es el caso que importa.
+        if float(chw.MS_PERMANENCIA) <= 0.0:
+            if not self._puede_mover(t_s):
+                return self._quedarse("movimiento reciente, se espera")
+            return self._mover_a(candidato, t_s, "margen superado")
+
         if self._voto_a != candidato:
             self._voto_a, self._t_voto = candidato, t_s
             return self._quedarse(f"votando sector {candidato}")
@@ -171,6 +179,43 @@ class Sectorizador:
         return self._mover_a(sector_de(angulo), t_s, "forzado")
 
 
+# =============================================================================
+# Donde caen los bordes de sector en cada camara
+# =============================================================================
+
+def bordes_en_pixeles(camara: int, ancho_img: int) -> list[tuple[float, float]]:
+    """
+    [(angulo, pixel_x)] de cada borde de sector VISIBLE en esta camara.
+
+    Sirve para dibujar las divisiones sobre la imagen y ver, antes de calibrar
+    nada, si caen donde uno espera. Los bordes que quedan fuera del campo de
+    vision de la camara se descartan: no tiene sentido dibujar una linea del
+    sector 0 en la camara que mira el otro lado de la cancha.
+
+    OJO: hasta P8 esto usa el modelo de lente NOMINAL (FOV lineal), que tiene
+    error de barril en los bordes. Con CAL_PIXEL_ANGULO cargado,
+    geometria.pixel_a_angulo pasa a interpolar la tabla medida, pero
+    angulo_a_pixel sigue siendo nominal: es solo para dibujar.
+    """
+    import geometria
+
+    salida = []
+    for a in bordes():
+        px = geometria.angulo_a_pixel(a, ancho_img, camara)
+        if 0 <= px <= ancho_img:
+            salida.append((a, px))
+    return salida
+
+
+def sectores_visibles(camara: int) -> list[int]:
+    """Indices de los sectores que esta camara alcanza a ver, aunque sea en parte."""
+    import geometria
+
+    lo, hi = geometria.cobertura(camara)
+    b = bordes()
+    return [i for i in range(len(b) - 1) if b[i + 1] > lo and b[i] < hi]
+
+
 # --------------------------------------------------------------------------- #
 # CLI: describe la particion, sin dependencias
 # --------------------------------------------------------------------------- #
@@ -190,7 +235,29 @@ def main() -> int:
     print(f"minimo entre movs     {chw.MS_MINIMO_ENTRE_MOVIMIENTOS:.0f} ms")
     print(f"omega rapida          {chw.OMEGA_RAPIDA:.0f} deg/s "
           f"(saltea la permanencia)")
+    if chw.MS_PERMANENCIA <= 0:
+        print("permanencia DESACTIVADA: cambia apenas se supera el margen")
     print()
+
+    import geometria
+    print("cobertura de cada camara (modelo nominal, sin calibrar):")
+    for cam in chw.CAMARAS:
+        lo, hi = geometria.cobertura(cam)
+        vis = sectores_visibles(cam)
+        print(f"  camara {cam}: {lo:6.1f} a {hi:6.1f} grados   "
+              f"sectores {vis}")
+
+    compartidos = (set(sectores_visibles(0)) & set(sectores_visibles(1)))
+    print(f"  sectores en las DOS: {sorted(compartidos)}")
+    print()
+
+    ancho = int(getattr(__import__("config"), "CAM_ANCHO", 2304))
+    for cam in chw.CAMARAS:
+        print(f"bordes de sector en la camara {cam} ({ancho} px de ancho):")
+        for a, px in bordes_en_pixeles(cam, ancho):
+            print(f"  {a:5.0f} deg -> x = {px:7.1f} px")
+        print()
+
     print("sector de cada angulo:")
     for a in range(0, 181, 10):
         print(f"  {a:3d} deg -> sector {sector_de(a)}  "

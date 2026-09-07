@@ -165,11 +165,21 @@ NOMBRE_CLASE = "ball"
 CAMARAS = (0, 1)
 
 # Campo de vision horizontal de cada camara, en grados.
-CAM_FOV = {0: 100.0, 1: 100.0}
+#
+# ESTIMADO, NO MEDIDO (+/- 5 grados). Cobertura observada: la camara 0 barre
+# aproximadamente 0..102 y la camara 1 aproximadamente 78..180, o sea 102
+# grados cada una con unos 24 grados de solape en el centro.
+#
+# Se reemplaza por los valores medidos en P8 (calibrar.py). Mientras tanto
+# alcanza para dibujar las lineas de sector y ver si caen donde uno espera.
+CAM_FOV = {0: 102.0, 1: 102.0}
 
-# A que angulo del mundo (0..180) mira el CENTRO de cada camara. Medilo con
-# la pelota en el centro de cada imagen y un transportador.
-CAM_CENTRO_ANGULO = {0: 55.0, 1: 125.0}
+# A que angulo del mundo (0..180) mira el CENTRO de cada camara.
+#
+# ESTIMADO, NO MEDIDO: es el punto medio de la cobertura de arriba
+# (0..102 -> 51, 78..180 -> 129). Los valores anteriores, 55 y 125, estaban
+# inventados sin ninguna observacion detras.
+CAM_CENTRO_ANGULO = {0: 51.0, 1: 129.0}
 
 # True si la camara esta montada dada vuelta (x creciente -> angulo decreciente).
 CAM_ESPEJO = {0: False, 1: False}
@@ -217,12 +227,24 @@ MS_MINIMO_ENTRE_CAMBIOS = 1000.0
 # Con un FOV de mas de 100 grados en la GoPro desde 3 m de altura, un error de
 # medio sector (10 grados) no saca la pelota del cuadro.
 
-# 7 sectores de 20 grados sobre 20..160.
-SECTOR_DESDE = 20.0
-SECTOR_HASTA = 160.0
-N_SECTORES = 7
-# bordes  = [20, 40, 60, 80, 100, 120, 140, 160]
-# centros = [30, 50, 70, 90, 110, 130, 150]
+# 9 sectores de 20 grados sobre 0..180, o sea el semiplano COMPLETO.
+#
+# bordes  = [0, 20, 40, 60, 80, 100, 120, 140, 160, 180]
+# centros = [10, 30, 50, 70, 90, 110, 130, 150, 170]
+#
+# El diseño original recortaba a 20..160 (7 sectores) y perdia los dos
+# extremos. Con las camaras cubriendo 0..102 y 78..180 esos extremos SI se
+# ven, y con la camara a ~2 m del fondo hacen falta: una jugada contra el
+# lateral cae ahi.
+#
+# El recorrido mecanico alcanza: MOTOR_GRADOS_MIN/MAX son -95/+95 respecto de
+# un cero que mira a 90 grados, o sea -5..185 del mundo. Los centros extremos
+# (10 y 170) quedan holgados; si en el fierro real el motor no llega, se ve en
+# la columna 'clampeado' de geometria.angulo_a_grados_motor y hay que
+# corregir los limites, no los sectores.
+SECTOR_DESDE = 0.0
+SECTOR_HASTA = 180.0
+N_SECTORES = 9
 
 # --- Schmitt trigger ---------------------------------------------------------
 # Para pasar del sector i al i+1 no alcanza con cruzar el borde: hay que
@@ -233,15 +255,26 @@ N_SECTORES = 7
 # el motor se ve nervioso, subir.
 HISTERESIS_SECTOR_DEG = 5.0
 
-# Ademas del margen, la condicion tiene que SOSTENERSE este tiempo. El margen
-# solo no alcanza porque el ruido de la deteccion (la pelota "salta" varios
-# grados entre frames) puede superarlo; la permanencia sola tampoco, porque
-# una pelota que se queda sobre el limite la cumple todo el tiempo.
+# Ademas del margen, la condicion puede exigirse SOSTENIDA este tiempo.
 #
-# TENTATIVO. El valor viejo del diseño de 9 zonas era 1500 ms.
-MS_PERMANENCIA = 600.0
+# 0 = DESACTIVADA. Es el valor actual, y es una prueba deliberada: la espera
+# es contraproducente justo en el caso que mas importa, el pelotazo. La
+# excepcion por OMEGA_RAPIDA lo cubria solo si la velocidad angular estimada
+# superaba el umbral, y esa estimacion es ruidosa; con la permanencia en 0 el
+# sector cambia apenas se supera el margen, siempre.
+#
+# Queda MS_MINIMO_ENTRE_MOVIMIENTOS como unico freno temporal, que es un piso
+# duro y no una espera antes de reaccionar: el primer movimiento sale
+# inmediato y lo que se limita es la FRECUENCIA de los siguientes.
+#
+# Si al mirar el video de cancha el motor se ve nervioso, la primera opcion es
+# subir HISTERESIS_SECTOR_DEG (mas margen, misma reaccion) y solo despues
+# volver a poner permanencia aca. El briefing proponia 600 ms de arranque.
+MS_PERMANENCIA = 0.0
 
-# Piso duro entre movimientos del motor, pase lo que pase.
+# Piso duro entre movimientos del motor, pase lo que pase. Con la permanencia
+# en 0 este es el unico freno temporal, asi que hace todo el trabajo de evitar
+# que el motor se la pase moviendo.
 MS_MINIMO_ENTRE_MOVIMIENTOS = 800.0
 
 # --- Excepcion por regimen ---------------------------------------------------
