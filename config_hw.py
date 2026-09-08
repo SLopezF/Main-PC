@@ -187,9 +187,31 @@ CAM_CENTRO_ANGULO = {0: 51.0, 1: 129.0}
 # True si la camara esta montada dada vuelta (x creciente -> angulo decreciente).
 CAM_ESPEJO = {0: False, 1: False}
 
-# Calibracion opcional por camara: pares (pixel_x, angulo_mundo) medidos
-# poniendo la pelota en puntos conocidos. Con 3 o mas puntos se interpola y se
-# ignora el FOV nominal, que tiene error de barril en los bordes.
+# --- Intrinsecos de las lentes (ChArUco) -------------------------------------
+# Archivo con fx, fy, cx, cy y los coeficientes de distorsion de cada camara,
+# generado con calibrate_distortion.py sobre un tablero ChArUco.
+#
+# Con esto el pasaje pixel -> angulo deja de ser lineal: se desdistorsiona el
+# punto y se toma el atan de la coordenada normalizada, que es la proyeccion
+# real de la lente. El modelo lineal que se usaba antes se equivoca hasta
+# 4.9 grados en el medio del cuadro (medido contra estos intrinsecos), o sea
+# casi un cuarto de sector.
+CAL_INTRINSECOS = "calibracion_camaras.json"
+
+# El archivo nombra las camaras por letra y el sistema por indice.
+CAM_LETRA_CALIBRACION = {0: "B", 1: "A"}
+
+# --- Yaw: a que angulo del MUNDO mira el eje optico de cada camara -----------
+# Es lo UNICO que no se puede sacar del ChArUco: los intrinsecos describen la
+# lente, no hacia donde esta apuntada. Se mide con calibrar.py, usando el
+# encoder del motor como transportador.
+#
+# None = usar CAM_CENTRO_ANGULO (estimado) como respaldo.
+CAM_YAW = {0: None, 1: None}
+
+# Camino VIEJO, por si no hay intrinsecos: pares (pixel_x, angulo_mundo)
+# medidos a mano. Con 3 o mas puntos se interpola. Los intrinsecos tienen
+# prioridad sobre esto.
 CAL_PIXEL_ANGULO = {0: [], 1: []}
 
 
@@ -254,8 +276,19 @@ N_SECTORES = 9
 # superarlo por este margen. Sin esto, una pelota parada justo sobre un borde
 # hace saltar el motor de ida y vuelta indefinidamente.
 #
-# TENTATIVO (arranque del briefing). Se ajusta mirando el video de cancha: si
-# el motor se ve nervioso, subir.
+# TENTATIVO. Es el UNICO freno del vaiven: MS_MINIMO_ENTRE_MOVIMIENTOS esta
+# en 0 y la permanencia son 2 frames. Se ajusta mirando el video de cancha.
+#
+# Medido con 5 grados, oscilando 30 s sobre un borde:
+#     +-3.0 deg  ->   0 cambios
+#     +-4.9 deg  ->   0 cambios
+#     +-6.0 deg  ->  29 cambios (1 por segundo)
+#
+# Ese ultimo caso NO es ruido de deteccion (el gate y el Kalman lo filtran
+# antes): es la pelota moviendose 12 grados de ida y vuelta de verdad, dos
+# jugadores pasandosela cerca de un borde. Si en el video se ve inquieto, la
+# palanca es SUBIR esto (con 10 harian falta +-11 para moverlo), no volver al
+# piso de tiempo.
 HISTERESIS_SECTOR_DEG = 5.0
 
 # Permanencia, en FRAMES (no en milisegundos). Cuantos frames seguidos tiene
@@ -278,10 +311,23 @@ HISTERESIS_SECTOR_DEG = 5.0
 # HISTERESIS_SECTOR_DEG (mas margen, misma reaccion) y solo despues esto.
 FRAMES_PERMANENCIA = 2
 
-# Piso duro entre movimientos del motor, pase lo que pase. Limita la
-# FRECUENCIA sin retrasar la primera reaccion: el primer movimiento sale
-# inmediato.
-MS_MINIMO_ENTRE_MOVIMIENTOS = 800.0
+# Piso duro entre movimientos del motor. 0 = SIN PISO.
+#
+# Se saco (estaba en 800 ms) y el motivo es que atacaba el sintoma equivocado.
+# El vaiven lo causa la POSICION de la pelota oscilando sobre un borde, y eso
+# ya lo resuelve HISTERESIS_SECTOR_DEG, que actua sobre la posicion. Un piso
+# de tiempo no distingue entre una pelota que tiembla sobre un limite y una
+# que cruzo media cancha.
+#
+# Y rompia el caso que mas importa. Medido con un pelotazo de 20 a 170 grados
+# en 425 ms (muestreado a 40 fps): el motor se movia UNA vez a los 100 ms
+# hacia 50 grados y quedaba bloqueado. Con la pelota en 170, el motor seguia
+# apuntando a 50: 120 grados de error, con la GoPro cubriendo +-50. La pelota
+# quedaba fuera del cuadro.
+#
+# Si al mirar el video de cancha el motor se ve nervioso, la palanca es
+# HISTERESIS_SECTOR_DEG, no esto.
+MS_MINIMO_ENTRE_MOVIMIENTOS = 0.0
 
 # --- Regimen rapido/lento: SACADO -------------------------------------------
 # OMEGA_RAPIDA y OMEGA_LENTA ya NO las usa nadie para decidir. Quedan porque
