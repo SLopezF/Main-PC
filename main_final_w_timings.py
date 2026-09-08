@@ -156,7 +156,8 @@ class MainFinal:
                  ruta_csv: str | None = None, verbose: bool = True,
                  debug_mp4: str | None = None, escala: float | None = None,
                  lineas_sectores: bool = False, gopro_falsa: bool = False,
-                 on_archivo_listo=None, on_alerta=None):
+                 on_archivo_listo=None, on_alerta=None,
+                 ruta_lat: str | None = None):
         self.con_motor = con_motor
         self.con_gopro = con_gopro
         self.con_csv = con_csv
@@ -204,6 +205,15 @@ class MainFinal:
         self.cambios_camara = 0
         self.t0 = None
 
+        # --- latencias (ver seccion LATENCIA abajo)
+        # captura del frame -> decision tomada, en TODOS los frames
+        self.lat_decision_ms: list[float] = []
+        # captura del frame -> apuntar() enviado, SOLO en los frames que
+        # movieron el motor (en el resto no hay "hasta el motor" que medir)
+        self.lat_motor_ms: list[float] = []
+        self.ruta_lat = ruta_lat
+        self._reloj_avisado = False
+
     # ------------------------------------------------------------- alertas
     def _alerta(self, texto: str) -> None:
         """Una alerta no aborta: se registra y el sistema sigue."""
@@ -218,6 +228,68 @@ class MainFinal:
     def _log(self, texto: str) -> None:
         if self.verbose:
             print(texto)
+
+    # ------------------------------------------------------------ latencia
+    def _medir(self, info: dict, destino: list) -> None:
+        """
+        Guarda (ahora - ts_de_captura) en ms.
+
+        `info["ts_ns"]` tiene que venir del MISMO reloj que
+        time.monotonic_ns(), o la resta no significa nada. En Linux los
+        drivers de camara suelen usar CLOCK_MONOTONIC, que es justo ese,
+        pero no esta garantizado: si el timestamp viniera de otro reloj
+        (epoch, CLOCK_BOOTTIME, o el reloj de la camara), las diferencias
+        salen negativas o gigantes. Por eso se valida una sola vez en vez
+        de confiar y publicar numeros sin sentido.
+        """
+        ts = info.get("ts_ns")
+        if ts is None:
+            return
+        ms = (time.monotonic_ns() - ts) / 1e6
+
+        if not self._reloj_avisado and (ms < 0 or ms > 10_000):
+            self._reloj_avisado = True
+            self._alerta(
+                f"las latencias no son confiables: la primera dio {ms:.0f} ms. "
+                f"info['ts_ns'] no parece estar en el mismo reloj que "
+                f"time.monotonic_ns(); revisar de donde sale el timestamp en "
+                f"fuente.py antes de usar estos numeros.")
+
+        destino.append(ms)
+
+    @staticmethod
+    def _percentiles(valores: list) -> str:
+        """p50 / p95 / max, en una linea. Sin numpy: es una lista corta."""
+        if not valores:
+            return "sin datos"
+        v = sorted(valores)
+        n = len(v)
+        p50 = v[n // 2]
+        p95 = v[min(n - 1, int(0.95 * n))]
+        return (f"p50 {p50:6.1f} ms   p95 {p95:6.1f} ms   "
+                f"max {v[-1]:6.1f} ms   (n={n})")
+
+    def _volcar_latencias(self) -> None:
+        """
+        Deja las latencias en su propio CSV, aparte del de frames.
+
+        Va en un archivo separado a proposito: el CSV de frames comparte
+        columnas con replay.py (es lo que hace que el analisis de la tesis
+        sea un solo script), y meterle una columna extra rompe esa simetria.
+        """
+        if not self.ruta_lat:
+            return
+        try:
+            with open(self.ruta_lat, "w", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                w.writerow(["tipo", "latencia_ms"])
+                for ms in self.lat_decision_ms:
+                    w.writerow(["decision", f"{ms:.3f}"])
+                for ms in self.lat_motor_ms:
+                    w.writerow(["motor", f"{ms:.3f}"])
+            self._log(f"    latencias -> {self.ruta_lat}")
+        except Exception as exc:
+            self._alerta(f"no pude escribir las latencias: {exc}")
 
     # ------------------------------------------------------------- arranque
     def iniciar(self) -> bool:
@@ -358,6 +430,13 @@ class MainFinal:
                     frame, info, self.hailo, self.model_hw,
                     self.tracker, self.sectorizador, self.omega)
 
+                # --- LATENCIA: captura -> decision tomada.
+                # Mide todo el pipeline de vision (captura + preproceso +
+                # Hailo + tracker + sectorizador) para ESTE frame. Se toma
+                # apenas vuelve procesar_frame, antes de cualquier print o
+                # escritura, para no contaminar el numero con el I/O.
+                self._medir(info, self.lat_decision_ms)
+
                 self.frames += 1
                 if r.aceptado:
                     self.aceptados += 1
@@ -384,6 +463,11 @@ class MainFinal:
                     ts_ultimo_movimiento = t_s
                     destino = ("motor a" if self.control is not None
                                else "(sin motor) iria a")
+                    # LATENCIA: captura -> orden al motor. Se toma ANTES del
+                    # print y del apuntar(), asi el numero es "cuanto tardo el
+                    # sistema en decidir el movimiento", sin el costo de
+                    # loguearlo por consola.
+                    self._medir(info, self.lat_motor_ms)
                     self._log(f"  sector {rs.sector} -> {destino} "
                               f"{rs.angulo_objetivo:.0f} deg  ({rs.motivo})")
                     if self.control is not None:
@@ -534,6 +618,7 @@ class MainFinal:
             self.hailo = None
 
         self.estado = Estado.IDLE
+        self._volcar_latencias()
         self._log(self.resumen())
 
     def resumen(self) -> str:
@@ -547,6 +632,10 @@ class MainFinal:
             f"con deteccion       {self.aceptados}  ({pct:.1f}%)",
             f"cambios de sector   {self.cambios_sector}",
             f"cambios de camara   {self.cambios_camara}",
+            "",
+            "LATENCIA (desde la captura del frame)",
+            f"  hasta la decision   {self._percentiles(self.lat_decision_ms)}",
+            f"  hasta el motor      {self._percentiles(self.lat_motor_ms)}",
         ]
         if self.con_csv:
             lineas.append(f"csv                 {self.ruta_csv}")
@@ -641,6 +730,9 @@ def main() -> int:
                     help="usar la GoPro simulada de hw_falsos en vez de la real")
     ap.add_argument("--camara", type=int, default=0, choices=[0, 1])
     ap.add_argument("--csv", type=str, default=None)
+    ap.add_argument("--lat-csv", type=str, nargs="?",
+                    const="/dev/shm/latencias.csv", default=None,
+                    help="volcar las latencias medidas a un CSV aparte")
     ap.add_argument("--debug-mp4", type=str, nargs="?",
                     const="/dev/shm/debug_main.mp4", default=None,
                     help="video anotado (cuesta un resize y un encode por "
@@ -675,6 +767,7 @@ def main() -> int:
         escala=args.escala,
         lineas_sectores=args.lineas_sectores,
         gopro_falsa=args.gopro_falsa,
+        ruta_lat=args.lat_csv,
         on_archivo_listo=_publicar_archivo,
         on_alerta=_publicar_alerta,
     )
