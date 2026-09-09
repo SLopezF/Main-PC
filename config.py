@@ -7,11 +7,7 @@ sobre Raspberry Pi 5 + Hailo-8.
 Todas las constantes ajustables del proyecto viven acá para no tener
 que buscarlas dispersas en el resto de los módulos.
 """
-# Presupuesto de tiempo de un frame de TRACK: preprocesado + inferencia +
-# decode. Sale de CAM_FPS = 40 -> 1000/40 = 25 ms. Si bench.py mide un p95
-# por encima de esto, el que se ajusta es CAM_FPS, no este numero.
-PRESUPUESTO_TRACK_MS = 25.0
-MAX_PERDIDOS_PCT = 2.0
+
 # =============================================================================
 # ENTRADA: CÁMARA EN VIVO
 # =============================================================================
@@ -96,6 +92,29 @@ MODEL_INPUT_CHANNELS = 3
 FUENTE_ENTREGA_BGR = True
 
 SEARCH_TILE_GRID = (2, 2)
+
+
+# =============================================================================
+# MÁSCARA DE HORIZONTE  (temporal)
+# =============================================================================
+
+# Filas de la imagen a partir de las cuales HACIA ARRIBA se pinta todo negro,
+# antes de recortar y de inferir. None = sin máscara.
+#
+# Para qué: de noche, las luces del fondo de la cancha son círculos brillantes
+# y el modelo las detecta como pelotas. Tapando la parte alta del cuadro, que
+# es donde están, el problema desaparece.
+#
+# Cómo se ajusta: empezá con un número CHICO (tapa poco) y subilo hasta que las
+# luces queden cubiertas. Con MASCARA_Y = 400 se pintan negras las filas 0..399,
+# o sea el tercio superior de un frame de 1296.
+#
+# ESTO ES TEMPORAL Y ES UN PARCHE. El sistema está pensado para usarse de día.
+# Recortar el cuadro también recorta dónde puede estar la pelota: una pelota
+# alta en un centro o un tiro libre cae en la zona tapada y deja de verse.
+# Antes de dejar esto puesto en serio, la solución de fondo es reentrenar con
+# imágenes nocturnas o filtrar por tamaño de caja.
+MASCARA_Y = None
 
 
 # =============================================================================

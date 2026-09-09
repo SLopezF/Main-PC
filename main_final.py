@@ -28,25 +28,10 @@ SI LA GOPRO FALLA, EL SISTEMA SIGUE
 No aborta: emite una alerta y sigue trackeando. Perder la grabacion es malo;
 perder tambien el tracking (y los datos del CSV) es peor.
 
-PANEL WEB
-Ademas de la consola, el sistema levanta el panel de web_control.py en el
-puerto 5000. Los botones Iniciar/Detener del panel llaman a las MISMAS
-`iniciar()` / `detener()` de aca: la pagina es otro disparador, no otro
-sistema. Por eso el panel NO graba por su cuenta cuando lo levanta este
-main (ver register_session_hooks en web_control.py): un solo dueno de la
-camara evita mandarle comandos duplicados.
-
-Al terminar una grabacion, el path del archivo en la SD se publica en
-/api/last_file, que es lo que gopro_file_transfer.py (corriendo en la
-computadora) poolea para bajarlo directo de la camara y despues pedir el
-borrado. Esa parte no cambia.
-
 USO
     python3 main_final.py                    # ENTER arranca, ENTER detiene
     python3 main_final.py --minutos 10 --sin-gopro
     python3 main_final.py --sin-motor --sin-gopro    # solo deteccion
-    python3 main_final.py --sin-web           # como era antes, sin panel
-    python3 main_final.py --puerto-web 8080   # panel en otro puerto
 """
 
 import csv
@@ -71,80 +56,6 @@ class Estado(Enum):
     GRABANDO = 2
 
 
-# --------------------------------------------------------------------------- #
-# GoPro real
-# --------------------------------------------------------------------------- #
-
-class GoProReal:
-    """
-    Adaptador sobre gopro_controller.py con la MISMA interfaz que esperaba
-    hw_falsos.GoPro (init / iniciar_grabacion / detener_grabacion / estado /
-    close), asi el resto de main_final no cambia.
-
-    La diferencia con la version falsa es que esta habla con la camara de
-    verdad: se conecta a su Wi-Fi, le manda el shutter, y al detener devuelve
-    el path real del archivo en la SD ("FOLDER/ARCHIVO.MP4"), que es lo que
-    despues se publica para que la computadora lo baje.
-    """
-
-    def __init__(self):
-        import gopro_controller as gc
-        self._gc = gc
-        self._cam = None
-
-    def init(self, timeout: float = 60.0) -> bool:
-        """
-        Espera a que la camara este conectada y respondiendo, pero con un
-        limite: wait_for_gopro() de gopro_controller bloquea para siempre, y
-        aca no queremos que una camara apagada cuelgue todo el arranque del
-        sistema (la regla es "si la GoPro falla, el sistema sigue").
-        """
-        gc = self._gc
-        fin = time.monotonic() + timeout
-        while time.monotonic() < fin:
-            if not gc.is_connected_to_gopro_wifi():
-                if gc.gopro_ssid_visible():
-                    gc.connect_to_gopro_wifi()
-                else:
-                    time.sleep(2.0)
-                    continue
-            try:
-                cam = gc.create_camera()
-                if gc.gopro_api_reachable(cam):
-                    self._cam = cam
-                    gc.sync_camera_clock(cam)
-                    return True
-            except Exception:
-                pass
-            time.sleep(2.0)
-        return False
-
-    def iniciar_grabacion(self) -> bool:
-        if self._cam is None:
-            return False
-        try:
-            self._gc.start_recording(self._cam)
-            return True
-        except Exception:
-            return False
-
-    def detener_grabacion(self):
-        """Devuelve el path en la SD ('FOLDER/ARCHIVO.MP4') o None."""
-        if self._cam is None:
-            return None
-        return self._gc.stop_recording(self._cam)
-
-    def estado(self) -> str:
-        if self._cam is None:
-            return "sin camara"
-        bat = self._gc.get_battery_level(self._cam)
-        sd = self._gc.get_remaining_sd_capacity(self._cam)
-        return f"bateria {bat}% | SD libre {sd}"
-
-    def close(self) -> None:
-        self._cam = None
-
-
 class MainFinal:
     """
     El sistema completo. Se construye una vez y se puede arrancar y detener
@@ -155,23 +66,13 @@ class MainFinal:
                  con_csv: bool = True, camara_inicial: int = 0,
                  ruta_csv: str | None = None, verbose: bool = True,
                  debug_mp4: str | None = None, escala: float | None = None,
-                 lineas_sectores: bool = False, gopro_falsa: bool = False,
-                 on_archivo_listo=None, on_alerta=None):
+                 lineas_sectores: bool = False):
         self.con_motor = con_motor
         self.con_gopro = con_gopro
         self.con_csv = con_csv
         self.camara_inicial = int(camara_inicial)
         self.ruta_csv = ruta_csv or config.LOG_CSV_PATH
         self.verbose = verbose
-
-        # GoPro simulada (hw_falsos). Solo para probar el resto del sistema
-        # sin camara; con esto NO hay archivo real que transferir.
-        self.gopro_falsa = bool(gopro_falsa)
-
-        # Callbacks opcionales hacia el panel web. Si no hay panel, quedan en
-        # None y el sistema se comporta exactamente como antes.
-        self._on_archivo_listo = on_archivo_listo
-        self._on_alerta = on_alerta
 
         # Video anotado. Cuesta un resize y un encode por frame, asi que NO se
         # deja prendido en una corrida de partido: es para debuggear.
@@ -209,11 +110,6 @@ class MainFinal:
         """Una alerta no aborta: se registra y el sistema sigue."""
         self.alertas.append(texto)
         print(f"[ALERTA] {texto}")
-        if self._on_alerta is not None:
-            try:
-                self._on_alerta(texto)
-            except Exception:
-                pass          # el panel nunca puede tumbar al sistema
 
     def _log(self, texto: str) -> None:
         if self.verbose:
@@ -303,17 +199,9 @@ class MainFinal:
         # --- gopro: lo ultimo, para que un fallo suyo no cueste el resto
         if self.con_gopro:
             self._log("--- gopro")
-            if self.gopro_falsa:
-                # Camino explicito de simulacion, solo bajo pedido: sirve para
-                # probar motor/vision sin camara, pero NO produce archivo real.
-                import hw_falsos
-                GoPro, _ = hw_falsos.cargar("gopro_lib", "GoPro", hw_falsos.GoPro)
-                self.gopro = GoPro()
-                self._alerta("usando GoPro SIMULADA (--gopro-falsa): no se va "
-                             "a grabar ni transferir ningun archivo real.")
-            else:
-                self.gopro = GoProReal()
-
+            import hw_falsos
+            GoPro, _ = hw_falsos.cargar("gopro_lib", "GoPro", hw_falsos.GoPro)
+            self.gopro = GoPro()
             if self.gopro.init(timeout=60.0) and self.gopro.iniciar_grabacion():
                 self._log(f"    grabando. {self.gopro.estado()}")
             else:
@@ -489,14 +377,6 @@ class MainFinal:
             try:
                 archivo = self.gopro.detener_grabacion()
                 self._log(f"    gopro -> {archivo}")
-                # Publicar el path es lo que dispara toda la transferencia:
-                # gopro_file_transfer.py (en la compu) lo ve por /api/last_file,
-                # lo baja directo de la camara y despues pide el borrado.
-                if archivo and self._on_archivo_listo is not None:
-                    try:
-                        self._on_archivo_listo(archivo)
-                    except Exception as exc:
-                        self._alerta(f"no pude publicar el archivo al panel: {exc}")
             except Exception as exc:
                 self._alerta(f"no pude detener la GoPro: {exc}")
             finally:
@@ -562,68 +442,6 @@ class MainFinal:
 
 
 # --------------------------------------------------------------------------- #
-# Panel web
-# --------------------------------------------------------------------------- #
-#
-# Tres cosas distintas, que corren en tres lugares distintos:
-#
-#   1. CHEQUEOS DE ARRANQUE (una sola vez, bloqueantes, antes de todo):
-#      confirmar que la GoPro responde, sincronizar su reloj, leer bateria
-#      y SD. Van en levantar_panel(), ANTES de arrancar los loops.
-#
-#   2. LOOPS CONTINUOS (arrancan una vez y corren solos):
-#        - connection_monitor: su propio thread, vigila la conexion con la
-#          camara cada CONNECTION_CHECK_INTERVAL segundos.
-#        - app.run() de Flask: atiende los botones del panel y los polls de
-#          gopro_file_transfer.py.
-#        - MainFinal._loop: el hilo de decision, que ya existia.
-#      Ninguno necesita un while nuevo aca: cada uno trae el suyo.
-#
-#   3. LOOP DE LA CLI (el de siempre): el input()/--minutos del main, que
-#      sigue viviendo en el hilo principal y no cambia.
-
-
-def levantar_panel(sistema: "MainFinal", puerto: int = 5000,
-                   chequear_gopro: bool = True):
-    """
-    Registra a `sistema` como dueno de la camara, corre los chequeos de
-    arranque y levanta el panel en un thread daemon. Devuelve el modulo
-    web_control (o None si no se pudo levantar: el panel es un extra, su
-    fallo no debe impedir que el sistema corra por consola).
-    """
-    try:
-        import web_control as wc
-    except Exception as exc:
-        print(f"[ALERTA] no pude importar el panel web: {exc}")
-        return None
-
-    # 1) Los botones del panel llaman a ESTE sistema, no graban por su cuenta.
-    wc.register_session_hooks(start=sistema.iniciar, stop=sistema.detener)
-
-    # 2) Chequeos de arranque, una sola vez y bloqueantes. Con --sin-gopro no
-    #    tiene sentido esperar a una camara que no vamos a usar.
-    if chequear_gopro:
-        try:
-            wc.startup_checks()
-        except Exception as exc:
-            print(f"[ALERTA] chequeo de arranque de la GoPro fallido: {exc}")
-
-    # 3) Loops continuos del panel.
-    try:
-        wc.connection_monitor.start()
-    except Exception as exc:
-        print(f"[ALERTA] no arranco el monitor de conexion: {exc}")
-
-    hilo = threading.Thread(
-        target=lambda: wc.app.run(host="0.0.0.0", port=puerto,
-                                  debug=False, use_reloader=False),
-        daemon=True, name="panel-web")
-    hilo.start()
-    print(f"panel web en http://0.0.0.0:{puerto}")
-    return wc
-
-
-# --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
 
@@ -634,13 +452,13 @@ def main() -> int:
     ap.add_argument("--sin-motor", action="store_true")
     ap.add_argument("--sin-gopro", action="store_true")
     ap.add_argument("--sin-csv", action="store_true")
-    ap.add_argument("--sin-web", action="store_true",
-                    help="no levantar el panel web (comportamiento anterior)")
-    ap.add_argument("--puerto-web", type=int, default=5000)
-    ap.add_argument("--gopro-falsa", action="store_true",
-                    help="usar la GoPro simulada de hw_falsos en vez de la real")
     ap.add_argument("--camara", type=int, default=0, choices=[0, 1])
     ap.add_argument("--csv", type=str, default=None)
+    ap.add_argument("--mascara-y", type=int, default=None,
+                    help="pinta de negro todo lo que este ARRIBA de esta fila, "
+                         "para tapar las luces del fondo de noche. Empezá "
+                         "chico y subilo. TEMPORAL: recorta donde puede estar "
+                         "la pelota.")
     ap.add_argument("--debug-mp4", type=str, nargs="?",
                     const="/dev/shm/debug_main.mp4", default=None,
                     help="video anotado (cuesta un resize y un encode por "
@@ -652,18 +470,10 @@ def main() -> int:
                     help="detener solo despues de N minutos")
     args = ap.parse_args()
 
-    # El panel se conecta despues de construir el sistema (necesita pasarle
-    # sus hooks), pero el sistema necesita las callbacks del panel para
-    # publicar el archivo. Se resuelve con una caja que se llena mas abajo.
-    _panel = {"wc": None}
-
-    def _publicar_archivo(camera_file_path: str) -> None:
-        if _panel["wc"] is not None:
-            _panel["wc"].publish_recorded_file(camera_file_path)
-
-    def _publicar_alerta(texto: str) -> None:
-        if _panel["wc"] is not None:
-            _panel["wc"].set_state(message=f"[ALERTA] {texto}")
+    if args.mascara_y is not None:
+        config.MASCARA_Y = args.mascara_y
+        print(f"MASCARA: negro por encima de la fila {args.mascara_y} "
+              f"(de {config.CAM_ALTO}). Es un parche temporal.")
 
     sistema = MainFinal(
         con_motor=not args.sin_motor,
@@ -674,9 +484,6 @@ def main() -> int:
         debug_mp4=args.debug_mp4,
         escala=args.escala,
         lineas_sectores=args.lineas_sectores,
-        gopro_falsa=args.gopro_falsa,
-        on_archivo_listo=_publicar_archivo,
-        on_alerta=_publicar_alerta,
     )
 
     # Ctrl+C tiene que dejar el fierro limpio, no abortar a la mitad.
@@ -684,13 +491,6 @@ def main() -> int:
         raise KeyboardInterrupt
 
     signal.signal(signal.SIGINT, _senal)
-
-    # Panel web: se levanta ANTES de arrancar la sesion, para poder disparar
-    # iniciar() desde el navegador sin tocar la consola.
-    if not args.sin_web:
-        _panel["wc"] = levantar_panel(
-            sistema, puerto=args.puerto_web,
-            chequear_gopro=(not args.sin_gopro and not args.gopro_falsa))
 
     try:
         if args.minutos:
@@ -700,94 +500,12 @@ def main() -> int:
             fin = time.monotonic() + args.minutos * 60
             while time.monotonic() < fin and sistema.estado == Estado.GRABANDO:
                 time.sleep(0.5)
-        elif args.sin_web:
-            # Sin panel: el flujo de siempre, tal cual estaba.
+        else:
             # input() vive ACA, nunca dentro del loop de decision.
             input("ENTER para arrancar... ")
             if not sistema.iniciar():
                 return 1
             input("ENTER para detener... ")
-        else:
-            # Con panel, la sesion puede arrancar por consola O por el boton
-            # de la pagina, y hay que esperar a los DOS. Dos cuidados:
-            #
-            #  - Un solo lector de stdin para toda la corrida. Si se abre un
-            #    input() por cada espera, los threads se pelean por el stdin
-            #    y el ENTER de "detener" se lo puede quedar el lector viejo.
-            #
-            #  - Esperar a GRABANDO, no a "distinto de IDLE". iniciar() pasa
-            #    primero por INIT (homing, camaras, Hailo, GoPro), que tarda
-            #    segundos; si la consola sale de la espera ahi, ve un estado
-            #    que todavia no es GRABANDO, da la corrida por terminada y
-            #    llama a detener() apenas apretaste el boton.
-            import queue
-
-            enters: "queue.Queue[bool]" = queue.Queue()
-
-            def _lector_stdin():
-                while True:
-                    try:
-                        input()
-                    except (EOFError, OSError):
-                        return
-                    enters.put(True)
-
-            threading.Thread(target=_lector_stdin, daemon=True,
-                             name="stdin").start()
-
-            def _hubo_enter() -> bool:
-                try:
-                    enters.get_nowait()
-                    return True
-                except queue.Empty:
-                    return False
-
-            # Sesiones sucesivas: con el panel arriba, terminar una grabacion
-            # no tiene por que matar el proceso. Se vuelve a IDLE y queda
-            # listo para otra (grabar, sacar fotos, grabar de nuevo) sin
-            # reiniciar nada. Se sale con Ctrl+C.
-            while True:
-                # --- esperar el arranque (consola o panel)
-                print("\nENTER para arrancar, o usa el boton del panel web...")
-                arranco_por_consola = False
-                while sistema.estado == Estado.IDLE:
-                    if _hubo_enter():
-                        arranco_por_consola = True
-                        break
-                    time.sleep(0.2)
-
-                if arranco_por_consola:
-                    if not sistema.iniciar():
-                        print("el arranque fallo; esperando otro intento")
-                        continue
-                else:
-                    print("arrancado desde el panel web")
-
-                # --- esperar a que termine el INIT antes de vigilar el final.
-                #     Aca estaba el bug: si se sale de la espera en INIT, el
-                #     loop de abajo ve un estado que todavia no es GRABANDO,
-                #     da la corrida por terminada y llama a detener() en plena
-                #     apertura del hardware.
-                while sistema.estado == Estado.INIT:
-                    time.sleep(0.2)
-
-                if sistema.estado != Estado.GRABANDO:
-                    print("el arranque no llego a GRABANDO; esperando otro intento")
-                    continue
-
-                # --- esperar la parada (consola o panel)
-                print("ENTER para detener, o usa el boton del panel web...")
-                paro_por_consola = False
-                while sistema.estado == Estado.GRABANDO:
-                    if _hubo_enter():
-                        paro_por_consola = True
-                        break
-                    time.sleep(0.2)
-
-                if paro_por_consola:
-                    sistema.detener()
-
-                print("sesion terminada. Ctrl+C para salir del programa.")
     except KeyboardInterrupt:
         print("\ninterrumpido")
     finally:

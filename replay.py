@@ -594,6 +594,8 @@ def main() -> int:
     ap.add_argument("--sin-mp4", action="store_true")
     ap.add_argument("--sin-csv", action="store_true")
     ap.add_argument("--escala", type=float, default=None)
+    ap.add_argument("--mascara-y", type=int, default=None,
+                    help="pinta de negro todo lo que este ARRIBA de esta fila")
     ap.add_argument("--lineas-sectores", action="store_true",
                     help="dibujar en el mp4 las divisiones de sector y el "
                          "centro de cada uno, para la camara indicada con "
@@ -611,6 +613,10 @@ def main() -> int:
                          "nunca a TRACK. Para imagenes SUELTAS: mide recall "
                          "puro, comparable entre carpetas.")
     args = ap.parse_args()
+
+    if args.mascara_y is not None:
+        config.MASCARA_Y = args.mascara_y
+        print(f"MASCARA: negro por encima de la fila {args.mascara_y}")
 
     correr(
         video=args.video,

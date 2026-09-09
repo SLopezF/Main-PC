@@ -110,6 +110,9 @@ def procesar_frame(frame, info, hailo, model_hw, tr, sect=None, omega_calc=None)
     """
     t0 = time.perf_counter()
 
+    # Antes que nada: tapar la zona alta si hay mascara. Ver config.MASCARA_Y.
+    preproceso.aplicar_mascara(frame)
+
     _, tile = tr.siguiente_entrada()
 
     if tr.modo == Mode.SEARCH:

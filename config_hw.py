@@ -44,7 +44,7 @@ MOTOR_ACELERACION = 4000           # pasos/s^2
 # --- Homing -----------------------------------------------------------------
 # Dato MEDIDO: con el motor en su cero mecanico, el encoder absoluto marca
 # 89 grados. Al arrancar se lee X y se corrige la diferencia.
-ENCODER_GRADOS_EN_MOTOR_CERO = 89.0
+ENCODER_GRADOS_EN_MOTOR_CERO = 174.0
 
 # El motor esta corrido (X - 89) grados. Para volver al home hay que moverlo
 # -(X - 89). Si al probarlo se va para el lado contrario, poné +1 aca en vez
@@ -269,7 +269,7 @@ MS_MINIMO_ENTRE_CAMBIOS = 1000.0
 # limites, no los sectores.
 SECTOR_DESDE = 0.0
 SECTOR_HASTA = 180.0
-N_SECTORES = 9
+N_SECTORES = 13
 
 # --- Schmitt trigger ---------------------------------------------------------
 # Para pasar del sector i al i+1 no alcanza con cruzar el borde: hay que
@@ -289,7 +289,7 @@ N_SECTORES = 9
 # jugadores pasandosela cerca de un borde. Si en el video se ve inquieto, la
 # palanca es SUBIR esto (con 10 harian falta +-11 para moverlo), no volver al
 # piso de tiempo.
-HISTERESIS_SECTOR_DEG = 5.0
+HISTERESIS_SECTOR_DEG = 3.0
 
 # Permanencia, en FRAMES (no en milisegundos). Cuantos frames seguidos tiene
 # que votar al mismo sector antes de mover.
@@ -309,7 +309,7 @@ HISTERESIS_SECTOR_DEG = 5.0
 #
 # Si al mirar el video de cancha el motor se ve nervioso, subir primero
 # HISTERESIS_SECTOR_DEG (mas margen, misma reaccion) y solo despues esto.
-FRAMES_PERMANENCIA = 2
+FRAMES_PERMANENCIA = 0
 
 # Piso duro entre movimientos del motor. 0 = SIN PISO.
 #

@@ -84,6 +84,27 @@ def _a_rgb(imagen: np.ndarray) -> np.ndarray:
     return np.ascontiguousarray(cv2.cvtColor(imagen, cv2.COLOR_BGR2RGB))
 
 
+def aplicar_mascara(frame: np.ndarray) -> np.ndarray:
+    """
+    Pinta de negro todo lo que este por ENCIMA de config.MASCARA_Y, EN EL
+    MISMO array. Devuelve el frame por comodidad.
+
+    Se hace sobre el frame nativo y ANTES de recortar, asi vale igual para el
+    mosaico de SEARCH y para el ROI de TRACK, y ademas se ve en el video de
+    debug: la banda negra es la confirmacion de que la mascara esta puesta
+    donde uno cree.
+
+    Se modifica in place a proposito: copiar un frame de 2304x1296 por frame
+    costaria mas que todo el preprocesado.
+    """
+    y = getattr(config, "MASCARA_Y", None)
+    if not y:
+        return frame
+    y = max(0, min(int(y), frame.shape[0]))
+    frame[:y] = 0
+    return frame
+
+
 # =============================================================================
 # Tamano de entrada del modelo
 # =============================================================================
