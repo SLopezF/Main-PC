@@ -160,7 +160,7 @@ class Sectorizador:
             self._votos += 1
 
         faltan = int(chw.FRAMES_PERMANENCIA) - self._votos
-        if faltan > 0:
+        if faltan >= 0:
             return self._quedarse(
                 f"votando sector {candidato} ({self._votos}/"
                 f"{chw.FRAMES_PERMANENCIA})")

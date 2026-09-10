@@ -39,7 +39,7 @@ MOTOR_BAUD = 115200
 MOTOR_CORRIENTE_MA = 600
 MOTOR_MICROPASOS = 16
 MOTOR_VELOCIDAD = 2000             # pasos/s
-MOTOR_ACELERACION = 4000           # pasos/s^2
+MOTOR_ACELERACION = 150           # pasos/s^2
 
 # --- Homing -----------------------------------------------------------------
 # Dato MEDIDO: con el motor en su cero mecanico, el encoder absoluto marca
@@ -226,7 +226,7 @@ CAL_PIXEL_ANGULO = {0: [], 1: []}
 #   3. piso duro de tiempo entre cambios.
 
 HIST_CAMARA_GRADOS = 8.0
-MS_CONFIRMAR_CAMBIO = 400.0
+MS_CONFIRMAR_CAMBIO = 0.0
 
 # Confianza minima para que una deteccion cuente como voto de cambio: un
 # falso positivo de 0.3 no deberia mover la camara.
@@ -267,9 +267,9 @@ MS_MINIMO_ENTRE_CAMBIOS = 1000.0
 # con 10 grados de margen. Si en el fierro el motor no llega, se ve en la
 # columna 'clampeado' de geometria.angulo_a_grados_motor: hay que corregir los
 # limites, no los sectores.
-SECTOR_DESDE = 0.0
-SECTOR_HASTA = 180.0
-N_SECTORES = 13
+SECTOR_DESDE = 10.0
+SECTOR_HASTA = 170.0
+N_SECTORES = 15
 
 # --- Schmitt trigger ---------------------------------------------------------
 # Para pasar del sector i al i+1 no alcanza con cruzar el borde: hay que
@@ -289,7 +289,7 @@ N_SECTORES = 13
 # jugadores pasandosela cerca de un borde. Si en el video se ve inquieto, la
 # palanca es SUBIR esto (con 10 harian falta +-11 para moverlo), no volver al
 # piso de tiempo.
-HISTERESIS_SECTOR_DEG = 3.0
+HISTERESIS_SECTOR_DEG = 2.0
 
 # Permanencia, en FRAMES (no en milisegundos). Cuantos frames seguidos tiene
 # que votar al mismo sector antes de mover.

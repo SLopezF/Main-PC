@@ -28,8 +28,20 @@ SI LA GOPRO FALLA, EL SISTEMA SIGUE
 No aborta: emite una alerta y sigue trackeando. Perder la grabacion es malo;
 perder tambien el tracking (y los datos del CSV) es peor.
 
+PANEL WEB
+Por defecto se levanta `web_control.py` en el puerto 5000 y desde ahi se
+arranca, se detiene y se saca una foto. `iniciar()` y `detener()` se le pasan
+como hooks (`web_control.register_session_hooks`), asi que el panel y la
+consola manejan EL MISMO sistema: no hay dos caminos que puedan desincronizar
+el estado.
+
+Si flask no esta instalado, o se pasa --sin-web, el panel simplemente no
+levanta y todo lo demas funciona igual. El panel es una comodidad, no una
+dependencia.
+
 USO
-    python3 main_final.py                    # ENTER arranca, ENTER detiene
+    python3 main_final.py                    # panel en http://<ip>:5000
+    python3 main_final.py --sin-web          # ENTER arranca, ENTER detiene
     python3 main_final.py --minutos 10 --sin-gopro
     python3 main_final.py --sin-motor --sin-gopro    # solo deteccion
 """
@@ -84,6 +96,9 @@ class MainFinal:
 
         self.estado = Estado.IDLE
         self.alertas: list[str] = []
+
+        self.web = None              # modulo web_control, si el panel levanto
+        self._hilo_web = None
 
         self._parar = threading.Event()
         self._hilo = None
@@ -377,6 +392,14 @@ class MainFinal:
             try:
                 archivo = self.gopro.detener_grabacion()
                 self._log(f"    gopro -> {archivo}")
+                # El panel expone esto en /api/last_file, que es lo que mira
+                # gopro_file_transfer.py desde la compu para bajar el archivo.
+                if self.web is not None and archivo:
+                    try:
+                        self.web.publish_recorded_file(archivo)
+                    except Exception as exc:
+                        self._alerta(f"no pude publicar el archivo en el "
+                                     f"panel: {exc}")
             except Exception as exc:
                 self._alerta(f"no pude detener la GoPro: {exc}")
             finally:
@@ -415,6 +438,63 @@ class MainFinal:
 
         self.estado = Estado.IDLE
         self._log(self.resumen())
+
+    # ---------------------------------------------------------------- panel
+    def levantar_web(self, puerto: int = 5000) -> bool:
+        """
+        Levanta el panel de web_control.py en un hilo daemon y le registra
+        `iniciar` y `detener` como hooks.
+
+        Devuelve False si no se pudo (flask ausente, puerto ocupado): el panel
+        es una comodidad y su ausencia NO tiene que impedir que el sistema
+        corra. Por eso todo esto esta envuelto en un try y solo emite alerta.
+
+        No se llama a `web_control.main()`: ese hace `startup_checks()`, que
+        BLOQUEA esperando a la GoPro, y ademas levanta Flask en el hilo
+        principal. Aca se necesita al reves: Flask de fondo, y que el arranque
+        del sistema lo decida el usuario desde el panel.
+        """
+        try:
+            import web_control
+        except Exception as exc:
+            self._alerta(f"no levanto el panel web ({type(exc).__name__}: "
+                         f"{exc}). Si falta flask: pip install flask")
+            return False
+
+        try:
+            web_control.register_session_hooks(self.iniciar, self.detener)
+            self.web = web_control
+
+            def _servir():
+                # threaded=True para que /api/status (que el panel pollea cada
+                # 2 s) no quede detras de un request largo.
+                web_control.app.run(host="0.0.0.0", port=puerto,
+                                    debug=False, use_reloader=False,
+                                    threaded=True)
+
+            self._hilo_web = threading.Thread(target=_servir, daemon=True,
+                                              name="web")
+            self._hilo_web.start()
+            time.sleep(0.5)
+            if not self._hilo_web.is_alive():
+                raise RuntimeError("el hilo del servidor murio al arrancar")
+
+            # El monitor de conexion refresca bateria y SD en el panel. Solo
+            # tiene sentido si de verdad vamos a hablar con la camara.
+            if self.con_gopro:
+                try:
+                    web_control.connection_monitor.start()
+                except Exception as exc:
+                    self._alerta(f"el monitor de conexion no arranco: {exc}")
+
+            self._log(f"\n>>> panel web en http://0.0.0.0:{puerto}")
+            self._log("    (usá la IP de la Pi desde el navegador; es HTTP, "
+                      "no HTTPS)")
+            return True
+        except Exception as exc:
+            self.web = None
+            self._alerta(f"no pude levantar el panel web: {exc}")
+            return False
 
     def resumen(self) -> str:
         dt = (time.monotonic() - self.t0) if self.t0 else 0.0
@@ -466,6 +546,10 @@ def main() -> int:
     ap.add_argument("--escala", type=float, default=None)
     ap.add_argument("--lineas-sectores", action="store_true",
                     help="dibujar las divisiones de sector en el video")
+    ap.add_argument("--sin-web", action="store_true",
+                    help="no levantar el panel web; arrancar y detener por "
+                         "consola con ENTER")
+    ap.add_argument("--puerto-web", type=int, default=5000)
     ap.add_argument("--minutos", type=float, default=None,
                     help="detener solo despues de N minutos")
     args = ap.parse_args()
@@ -492,8 +576,19 @@ def main() -> int:
 
     signal.signal(signal.SIGINT, _senal)
 
+    hay_web = False
+    if not args.sin_web:
+        hay_web = sistema.levantar_web(args.puerto_web)
+
     try:
-        if args.minutos:
+        if hay_web and not args.minutos:
+            # El arranque y la parada los decide el panel. Aca solo se espera,
+            # sin input(): con el panel abierto, un input() bloqueado en la
+            # consola confunde mas de lo que ayuda.
+            print("\nEsperando ordenes del panel web. Ctrl+C para salir.")
+            while True:
+                time.sleep(0.5)
+        elif args.minutos:
             if not sistema.iniciar():
                 return 1
             print(f"corriendo {args.minutos:.0f} minutos (Ctrl+C para cortar)")
